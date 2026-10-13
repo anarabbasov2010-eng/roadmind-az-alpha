@@ -490,18 +490,19 @@ export function configureScenarioSignal(net: MicroNetwork, nodeId: string, signa
   controller.cycleOffsetSeconds = Number(signal.offsetSeconds) || 0;
   controller.forcedState = signal.manualState;
   if (signal.manualState) return;
-  const cycle = clamp(Number(signal.cycleSeconds) || 80, 20, 240);
   const phaseCount = Math.max(1, controller.phases.length);
+  const cycle = clamp(Math.max(Number(signal.cycleSeconds) || 80, phaseCount * 9), 20, 240);
   const intergreen = 4 * phaseCount;
   const totalGreen = Math.max(5 * phaseCount, cycle - intergreen);
-  const greenWeightTotal = controller.phases.reduce((sum, phase) => sum + Math.max(1, phase.greenSeconds), 0);
+  const weights = controller.phases.map((phase) => Math.max(1, phase.greenSeconds));
+  const remainingWeight = weights.slice(1).reduce((sum, weight) => sum + weight, 0);
   const share = clamp(Number(signal.greenShare) || 0.58, 0.25, 0.85);
-  const distributable = Math.max(5 * phaseCount, Math.min(totalGreen, cycle * share));
-  for (const phase of controller.phases) {
-    phase.greenSeconds = Math.max(5, distributable * Math.max(1, phase.greenSeconds) / greenWeightTotal);
+  const firstGreen = phaseCount > 1 ? clamp(totalGreen * share, 5, totalGreen - 5 * (phaseCount - 1)) : totalGreen;
+  controller.phases.forEach((phase, index) => {
+    phase.greenSeconds = index === 0 ? firstGreen : Math.max(5, (totalGreen - firstGreen) * weights[index] / Math.max(1, remainingWeight));
     phase.yellowSeconds = 3;
     phase.allRedSeconds = 1;
-  }
+  });
 }
 
 export function resetScenarioController(net: MicroNetwork, nodeId: string): void {
