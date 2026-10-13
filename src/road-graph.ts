@@ -135,7 +135,7 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
       const reverse = !oneWay && lane >= forwardLanes;
       const localIndex = reverse ? lane - forwardLanes : lane;
       const count = reverse ? reverseLanes : forwardLanes;
-      const signedOffset = reverse ? (localIndex - (count - 1) / 2) * 3.25 : (localIndex - (count - 1) / 2) * 3.25;
+      const signedOffset = oneWay ? (localIndex - (count - 1) / 2) * 3.25 : -((count / 2) - localIndex - 0.5) * 3.25;
       const geometry = offsetLine(reverse ? [...coords].reverse() : coords, signedOffset);
       laneLines.push({ id: road.id + ':lane:' + lane, roadId: road.id, laneIndex: lane, direction: reverse ? -1 : 1, geometry });
     }
@@ -144,7 +144,6 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
     id, coordinate: node.coordinate, roadIds: Array.from(node.roadIds), degree: node.neighbours.size,
     intersection: node.neighbours.size >= 3
   }));
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const adjacency = new Map<string, Set<string>>();
   for (const node of nodes) adjacency.set(node.id, new Set());
   for (const edge of edges) { adjacency.get(edge.from)?.add(edge.to); adjacency.get(edge.to)?.add(edge.from); }
