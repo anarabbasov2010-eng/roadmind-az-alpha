@@ -24,7 +24,7 @@ export type MicroConfig = {
 };
 export type MicroNetwork = {
   source: RoadNetwork; movements: Movement[]; movementsByIncomingEdge: Map<string, Movement[]>;
-  controllers: Map<string, JunctionController>; edgesById: Map<string, NetworkEdge>;
+  controllers: Map<string, JunctionController>; edgesById: Map<string, NetworkEdge>; outgoingByNode: Map<string, NetworkEdge[]>;
   stats: { movements: number; conflicts: number; controlledJunctions: number; laneConnections: number };
 };
 export const DEFAULT_MICRO_CONFIG: MicroConfig = {
@@ -87,7 +87,7 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
     for (const from of ins) for (const to of outgoing.get(nodeId) || []) {
       if (from.id === to.id || (from.roadId === to.roadId && from.from === to.to)) continue;
       const kind = classifyTurn(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]));
-      if (Math.abs(deltaAngle(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]))) > 150) continue;
+      if (Math.abs(deltaAngle(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]))) > 150 && (outgoing.get(nodeId) || []).length > 1) continue;
       const countIn = laneCount(from), countOut = laneCount(to);
       const geometry = connector(from, to, kind);
       let lengthMeters = 0;
@@ -129,7 +129,7 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
       phases: colors.map((group, index) => ({ id: nodeId + ':phase:' + index, name: 'Фаза ' + (index + 1), movementIds: group.map((movement) => movement.id), greenSeconds: index === 0 ? 24 : 12, yellowSeconds: 3, allRedSeconds: 1 }))
     });
   }
-  return { source: network, movements, movementsByIncomingEdge, controllers, edgesById, stats: {
+  return { source: network, movements, movementsByIncomingEdge, controllers, edgesById, outgoingByNode: outgoing, stats: {
     movements: movements.length,
     conflicts: movements.reduce((sum, movement) => sum + movement.conflictIds.length, 0) / 2,
     controlledJunctions: controllers.size,
@@ -254,7 +254,15 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     }
     const edge = net.edgesById.get(vehicle.routeEdgeIds[vehicle.routeIndex]);
     if (!edge) continue;
-    const remaining = edgeLen(edge) - vehicle.distanceOnEdge;
+    let remaining = edgeLen(edge) - vehicle.distanceOnEdge;
+    if (vehicle.routeIndex >= vehicle.routeEdgeIds.length - 1 && remaining < Math.max(24, vehicle.speedMps * 3.5)) {
+      const exits = (net.outgoingByNode.get(edge.to) || []).filter((candidate) => (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === candidate.id));
+      if (exits.length) {
+        const random = randomFor(vehicle.id * 7919 + vehicle.completedTrips * 104729 + Math.floor(now));
+        const nextEdge = exits[Math.floor(random() * exits.length)];
+        vehicle.routeEdgeIds = [...vehicle.routeEdgeIds, ...findRoute(net, nextEdge, random)];
+      }
+    }
     const nextId = vehicle.routeEdgeIds[vehicle.routeIndex + 1];
     const movement = nextId ? (net.movementsByIncomingEdge.get(edge.id) || []).find((item) => item.toEdgeId === nextId && item.fromLane === vehicle.laneIndex) : null;
     const controller = movement ? net.controllers.get(movement.nodeId) : undefined;
