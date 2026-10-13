@@ -7,6 +7,10 @@ export type RoadInput = {
   coordinates: Position[];
   nodeRefs?: number[];
   lanes?: string;
+  lanesForward?: string;
+  lanesBackward?: string;
+  turnLanesForward?: string;
+  turnLanesBackward?: string;
   maxspeed?: string;
   oneway?: string;
   surface?: string;
@@ -66,11 +70,27 @@ function roadSpeed(road: RoadInput): number {
   return defaults[road.highway] || 25;
 }
 function laneCount(road: RoadInput): number {
+  const directionalTotal = Number.parseInt(road.lanesForward || '', 10) + Number.parseInt(road.lanesBackward || '', 10);
+  if (Number.isFinite(directionalTotal) && directionalTotal >= 1 && directionalTotal <= 12) return directionalTotal;
   const parsed = Number.parseInt(road.lanes || '', 10);
   if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 12) return parsed;
   if (road.highway === 'motorway' || road.highway === 'trunk') return 2;
   if (road.highway === 'primary' || road.highway === 'secondary') return 2;
   return 1;
+}
+function directionalLaneCounts(road: RoadInput): { forward: number; backward: number } {
+  const parse = (value?: string): number | null => {
+    const result = Number.parseInt(value || '', 10);
+    return Number.isFinite(result) && result >= 1 && result <= 12 ? result : null;
+  };
+  const total = laneCount(road);
+  const forward = parse(road.lanesForward), backward = parse(road.lanesBackward);
+  const reverseOnly = (road.oneway || '').toLowerCase() === '-1';
+  if (isOneway(road)) return reverseOnly ? { forward: 0, backward: backward ?? total } : { forward: forward ?? total, backward: 0 };
+  if (forward !== null && backward !== null) return { forward, backward };
+  if (forward !== null) return { forward, backward: Math.max(1, total - forward) };
+  if (backward !== null) return { forward: Math.max(1, total - backward), backward };
+  return { forward: Math.max(1, Math.ceil(total / 2)), backward: Math.max(1, Math.floor(total / 2)) };
 }
 function isOneway(road: RoadInput): boolean {
   return ['yes', '1', 'true', '-1'].includes((road.oneway || '').toLowerCase()) ||
@@ -114,6 +134,7 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
     const ids = coords.map((point, i) => keyFor(point, refs[i]));
     ids.forEach((id, i) => addNode(id, coords[i], road.id));
     const lanes = laneCount(road);
+    const directional = directionalLaneCounts(road);
     const oneWay = isOneway(road);
     const reverseOnly = (road.oneway || '').toLowerCase() === '-1';
     for (let i = 0; i < coords.length - 1; i++) {
@@ -122,15 +143,15 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
       if (length < 0.3) continue;
       nodeMap.get(from)!.neighbours.add(to);
       nodeMap.get(to)!.neighbours.add(from);
-      const forwardLanes = oneWay ? lanes : Math.max(1, Math.ceil(lanes / 2));
-      const reverseLanes = oneWay ? 0 : Math.max(1, Math.floor(lanes / 2));
+      const forwardLanes = directional.forward;
+      const reverseLanes = directional.backward;
       const edgeId = road.id + ':' + i;
       if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay });
       if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseOnly ? lanes : reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay });
     }
     // Render each mapped lane as a separate centerline. Missing OSM lane tags are estimates, not survey data.
-    const forwardLanes = oneWay ? (reverseOnly ? 0 : lanes) : Math.max(1, Math.ceil(lanes / 2));
-    const reverseLanes = oneWay ? (reverseOnly ? lanes : 0) : Math.max(1, Math.floor(lanes / 2));
+    const forwardLanes = directional.forward;
+    const reverseLanes = directional.backward;
     const total = forwardLanes + reverseLanes;
     for (let lane = 0; lane < total; lane++) {
       const reverse = reverseOnly || (!oneWay && lane >= forwardLanes);
