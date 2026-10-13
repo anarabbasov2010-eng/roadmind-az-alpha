@@ -17,7 +17,7 @@
 - No live municipal signal-controller connection exists. OSM signal nodes do not provide current lamp colour, phase, cycle offset or approved timing programmes. Automatically generated phases are fallback assumptions, not actual Baku signal timings. Use only verified field/controller plans for a real scenario.
 - No live traffic feed exists. Demand, routes and vehicle behavior are synthetic even though vehicles move on imported street geometry. No connection exists to cameras, induction loops, navigation-provider telemetry or official traffic feeds.
 - Complex via-way turn restrictions, complete lane-change behavior, pedestrian/cyclist interactions, public-transport priority, calibrated driver heterogeneity, measured origin-destination demand and grade-separated topology validation are not complete.
-- The editor's user-drawn road drafts are not automatically inserted into the imported simulation graph.
+- User-drawn road drafts are inserted into the active graph when their endpoints snap to existing network nodes. A free endpoint or a line that does not meet an existing node remains disconnected and is not a valid through-route.
 - Calibration currently applies a first-pass aggregate parameter fit; it does not prove the model is accurate. It must be followed by independent validation on held-out observation windows.
 
 ## Safety boundary
