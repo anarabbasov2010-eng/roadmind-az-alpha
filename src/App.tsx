@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, type RoadInput } from './road-graph';
-import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, type MicroNetwork, type MicroState } from './microsim';
+import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, signalStateAt, importSignalPlanJson, exportSignalPlanJson, parseCalibrationCsv, calibrateMicroConfig, type MicroNetwork, type MicroState } from './microsim';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
@@ -155,14 +155,27 @@ function laneMarkingCollection(roads: OSMRoad[]): FeatureCollection {
   return { type: 'FeatureCollection', features };
 }
 
-function importedSignalCollection(signals: OSMSignal[]): FeatureCollection {
+function importedSignalCollection(signals: OSMSignal[], network?: MicroNetwork | null, timeSeconds = 0): FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: signals.map((signal) => ({
       type: 'Feature', id: signal.id, geometry: { type: 'Point', coordinates: signal.coordinates },
-      properties: { id: signal.id, name: signal.name, direction: signal.direction || '', icon: 'rm-signal-reference', state: 'unknown' }
+      properties: (() => {
+        const controller = network?.controllers.get('n' + signal.id);
+        const movement = controller ? network?.movements.find((item) => item.nodeId === controller.nodeId) : undefined;
+        const state = controller && movement ? signalStateAt(controller, timeSeconds, movement.id) : 'unknown';
+        return { id: signal.id, name: signal.name, direction: signal.direction || '', icon: state === 'red' ? 'rm-signal-red' : state === 'green' ? 'rm-signal-green' : state === 'yellow' ? 'rm-signal-yellow' : 'rm-signal-reference', state };
+      })()
     }))
   };
+}
+
+function downloadTextFile(filename: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url; anchor.download = filename; anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function formatTime(date: Date | null): string {
@@ -198,15 +211,17 @@ function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void
 }
 
 async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void> {
-  const [redSignal, greenSignal, referenceSignal, carSage, carAmber] = await Promise.all([
+  const [redSignal, greenSignal, yellowSignal, referenceSignal, carSage, carAmber] = await Promise.all([
     loadSvgImage('./icons/traffic-light-red.svg'),
     loadSvgImage('./icons/traffic-light-green.svg'),
+    loadSvgImage('./icons/traffic-light-yellow.svg'),
     loadSvgImage('./icons/traffic-light-reference.svg'),
     loadSvgImage('./icons/car-sage.svg'),
     loadSvgImage('./icons/car-amber.svg')
   ]);
   map.addImage('rm-signal-red', redSignal, { pixelRatio: 2 });
   map.addImage('rm-signal-green', greenSignal, { pixelRatio: 2 });
+  map.addImage('rm-signal-yellow', yellowSignal, { pixelRatio: 2 });
   map.addImage('rm-signal-reference', referenceSignal, { pixelRatio: 2 });
   map.addImage('rm-car', carSage, { pixelRatio: 2 });
   map.addImage('rm-car-amber', carAmber, { pixelRatio: 2 });
@@ -362,6 +377,10 @@ export default function App() {
   const simulationRouteLengthKmRef = useRef(2.6);
   const microNetworkRef = useRef<MicroNetwork | null>(null);
   const microStateRef = useRef<MicroState | null>(null);
+  const microConfigRef = useRef(DEFAULT_MICRO_CONFIG);
+  const signalPlanInputRef = useRef<HTMLInputElement | null>(null);
+  const calibrationInputRef = useRef<HTMLInputElement | null>(null);
+  const lastSignalRenderSecondRef = useRef(-1);
   const modeRef = useRef<ToolMode>('select');
   const pendingRoadRef = useRef<Position | null>(null);
   const lastRequestAtRef = useRef(0);
@@ -542,9 +561,11 @@ export default function App() {
       const network = buildRoadNetwork(roadsCapped);
       const signalNodeIds = new Set(signalsCapped.map((signal) => 'n' + signal.id));
       const microNetwork = buildMicroNetwork(network, signalNodeIds);
-      const microState = createMicroState(microNetwork, { ...DEFAULT_MICRO_CONFIG, defaultSpeedKmh: speedLimit });
+      microConfigRef.current = { ...microConfigRef.current, defaultSpeedKmh: speedLimit };
+      const microState = createMicroState(microNetwork, microConfigRef.current);
       microNetworkRef.current = microNetwork;
       microStateRef.current = microState;
+      (map.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(signalsCapped, microNetwork, microState.timeSeconds) as never);
       const route = buildClosedSimulationRoute(network);
       if (route && route.length >= 4) {
         simulationRouteRef.current = route;
@@ -770,9 +791,14 @@ export default function App() {
       const microNetwork = microNetworkRef.current;
       const currentMicro = microStateRef.current;
       if (microNetwork && currentMicro && currentMicro.vehicles.length) {
-        const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...DEFAULT_MICRO_CONFIG, defaultSpeedKmh: speedLimit }, 0.1 * speedMultiplier);
+        const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...microConfigRef.current, defaultSpeedKmh: speedLimit }, 0.1 * speedMultiplier);
         microStateRef.current = nextMicro;
         (mapRef.current?.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, nextMicro) as never);
+        const signalSecond = Math.floor(nextMicro.timeSeconds);
+        if (signalSecond !== lastSignalRenderSecondRef.current) {
+          lastSignalRenderSecondRef.current = signalSecond;
+          (mapRef.current?.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(osmSignals, microNetwork, nextMicro.timeSeconds) as never);
+        }
       }
       const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, 0.1 * speedMultiplier, simulationRouteLengthKmRef.current);
       trafficRef.current = next;
@@ -783,7 +809,7 @@ export default function App() {
       }
     }, 100);
     return () => window.clearInterval(timer);
-  }, [isRunning, mapStatus, speedLimit, speedMultiplier]);
+  }, [isRunning, mapStatus, speedLimit, speedMultiplier, osmSignals]);
 
   useEffect(() => {
     try {
