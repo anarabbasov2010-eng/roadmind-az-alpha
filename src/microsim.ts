@@ -1,5 +1,5 @@
 import type { NetworkEdge, RoadNetwork } from './road-graph';
-import type { Position } from './traffic';
+import type { Position, ScenarioSignal } from './traffic';
 
 export type TurnKind = 'left' | 'through' | 'right';
 export type SignalColor = 'red' | 'yellow' | 'green';
@@ -9,7 +9,7 @@ export type Movement = {
   geometry: Position[]; lengthMeters: number; exitDistanceMeters: number; conflictIds: string[];
 };
 export type SignalPhase = { id: string; name: string; movementIds: string[]; greenSeconds: number; yellowSeconds: number; allRedSeconds: number };
-export type JunctionController = { nodeId: string; cycleOffsetSeconds: number; phases: SignalPhase[] };
+export type JunctionController = { nodeId: string; cycleOffsetSeconds: number; phases: SignalPhase[]; source?: 'generated' | 'scenario' | 'imported'; forcedState?: SignalColor | null };
 export type MicroVehicle = {
   id: number; routeEdgeIds: string[]; routeLaneIndices: number[]; routeIndex: number; laneIndex: number;
   distanceOnEdge: number; speedMps: number; accelerationMps2: number;
@@ -158,7 +158,7 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
       color.push(movement);
     }
     controllers.set(nodeId, {
-      nodeId, cycleOffsetSeconds: 0,
+      nodeId, cycleOffsetSeconds: 0, source: 'generated', forcedState: null,
       phases: colors.map((group, index) => ({ id: nodeId + ':phase:' + index, name: 'Фаза ' + (index + 1), movementIds: group.map((movement) => movement.id), greenSeconds: index === 0 ? 24 : 12, yellowSeconds: 3, allRedSeconds: 1 }))
     });
   }
@@ -170,6 +170,7 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
   }};
 }
 export function signalStateAt(controller: JunctionController, timeSeconds: number, movementId: string): SignalColor {
+  if (controller.forcedState) return controller.forcedState;
   const phases = controller.phases.filter((phase) => phase.movementIds.length);
   if (!phases.length) return 'red';
   const cycle = phases.reduce((sum, phase) => sum + phase.greenSeconds + phase.yellowSeconds + phase.allRedSeconds, 0);
@@ -437,4 +438,47 @@ export function importSignalPlanJson(net: MicroNetwork, input: string): SignalPl
   if (errors.length) return { ok: false, updated: 0, errors };
   for (const controller of staged) net.controllers.set(controller.nodeId, controller);
   return { ok: true, updated: staged.length, errors: [] };
+}
+
+export function ensureJunctionController(net: MicroNetwork, nodeId: string): JunctionController | null {
+  const existing = net.controllers.get(nodeId);
+  if (existing) return existing;
+  const atNode = net.movements.filter((movement) => movement.nodeId === nodeId);
+  if (!atNode.length) return null;
+  const colors: Movement[][] = [];
+  for (const movement of atNode) {
+    let color = colors.find((group) => group.every((other) => !movement.conflictIds.includes(other.id)));
+    if (!color) { color = []; colors.push(color); }
+    color.push(movement);
+  }
+  const controller: JunctionController = {
+    nodeId, cycleOffsetSeconds: 0, source: 'scenario', forcedState: null,
+    phases: colors.map((group, index) => ({
+      id: nodeId + ':scenario-phase:' + index, name: 'Фаза ' + (index + 1),
+      movementIds: group.map((movement) => movement.id), greenSeconds: index === 0 ? 24 : 12,
+      yellowSeconds: 3, allRedSeconds: 1
+    }))
+  };
+  net.controllers.set(nodeId, controller);
+  return controller;
+}
+export function configureScenarioSignal(net: MicroNetwork, nodeId: string, signal: Pick<ScenarioSignal, 'cycleSeconds' | 'greenShare' | 'offsetSeconds' | 'manualState'>): void {
+  const controller = ensureJunctionController(net, nodeId);
+  if (!controller || controller.source === 'imported') return;
+  controller.source = 'scenario';
+  controller.cycleOffsetSeconds = Number(signal.offsetSeconds) || 0;
+  controller.forcedState = signal.manualState;
+  if (signal.manualState) return;
+  const cycle = clamp(Number(signal.cycleSeconds) || 80, 20, 240);
+  const phaseCount = Math.max(1, controller.phases.length);
+  const intergreen = 4 * phaseCount;
+  const totalGreen = Math.max(5 * phaseCount, cycle - intergreen);
+  const greenWeightTotal = controller.phases.reduce((sum, phase) => sum + Math.max(1, phase.greenSeconds), 0);
+  const share = clamp(Number(signal.greenShare) || 0.58, 0.25, 0.85);
+  const distributable = Math.max(5 * phaseCount, Math.min(totalGreen, cycle * share));
+  for (const phase of controller.phases) {
+    phase.greenSeconds = Math.max(5, distributable * Math.max(1, phase.greenSeconds) / greenWeightTotal);
+    phase.yellowSeconds = 3;
+    phase.allRedSeconds = 1;
+  }
 }
