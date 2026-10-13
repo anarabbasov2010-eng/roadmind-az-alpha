@@ -26,6 +26,7 @@ export type TurnRestriction = { fromWayId: number; toWayId: number; viaNodeId: s
 export type MicroNetwork = {
   source: RoadNetwork; movements: Movement[]; movementsByIncomingEdge: Map<string, Movement[]>;
   controllers: Map<string, JunctionController>; edgesById: Map<string, NetworkEdge>; outgoingByNode: Map<string, NetworkEdge[]>;
+  movementsById: Map<string, Movement>; movementsByNode: Map<string, Movement[]>;
   stats: { movements: number; conflicts: number; controlledJunctions: number; laneConnections: number };
 };
 export const DEFAULT_MICRO_CONFIG: MicroConfig = {
@@ -163,7 +164,7 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
       phases: colors.map((group, index) => ({ id: nodeId + ':phase:' + index, name: 'Фаза ' + (index + 1), movementIds: group.map((movement) => movement.id), greenSeconds: index === 0 ? 24 : 12, yellowSeconds: 3, allRedSeconds: 1 }))
     });
   }
-  return { source: network, movements, movementsByIncomingEdge, controllers, edgesById, outgoingByNode: outgoing, stats: {
+  return { source: network, movements, movementsByIncomingEdge, controllers, edgesById, outgoingByNode: outgoing, movementsById: new Map(movements.map((movement) => [movement.id, movement])), movementsByNode: movementsAtNode, stats: {
     movements: movements.length,
     conflicts: movements.reduce((sum, movement) => sum + movement.conflictIds.length, 0) / 2,
     controlledJunctions: controllers.size,
@@ -237,7 +238,7 @@ export function vehiclePosition(net: MicroNetwork, vehicle: MicroVehicle): Posit
   const edge = net.edgesById.get(vehicle.routeEdgeIds[vehicle.routeIndex]);
   if (!edge) return [0, 0];
   if (vehicle.activeMovementId) {
-    const movement = net.movements.find((item) => item.id === vehicle.activeMovementId);
+    const movement = net.movementsById.get(vehicle.activeMovementId);
     if (movement) {
       let d = vehicle.connectorDistance;
       for (let i = 1; i < movement.geometry.length; i++) {
@@ -253,7 +254,7 @@ export function vehiclePosition(net: MicroNetwork, vehicle: MicroVehicle): Posit
 }
 export function vehicleBearing(net: MicroNetwork, vehicle: MicroVehicle): number {
   if (vehicle.activeMovementId) {
-    const movement = net.movements.find((item) => item.id === vehicle.activeMovementId);
+    const movement = net.movementsById.get(vehicle.activeMovementId);
     if (movement) return bearingDegrees(movement.geometry[0], movement.geometry[Math.min(2, movement.geometry.length - 1)]);
   }
   const edge = net.edgesById.get(vehicle.routeEdgeIds[vehicle.routeIndex]);
@@ -477,7 +478,7 @@ export function importSignalPlanJson(net: MicroNetwork, input: string): SignalPl
 export function ensureJunctionController(net: MicroNetwork, nodeId: string): JunctionController | null {
   const existing = net.controllers.get(nodeId);
   if (existing) return existing;
-  const atNode = net.movements.filter((movement) => movement.nodeId === nodeId);
+  const atNode = net.movementsByNode.get(nodeId) || [];
   if (!atNode.length) return null;
   const colors: Movement[][] = [];
   for (const movement of atNode) {
