@@ -515,7 +515,7 @@ export default function App() {
     if (!sourceRoads.length) return null;
     const baseNetwork = buildRoadNetwork(sourceRoads);
     const draftInputs: OSMRoad[] = drafts.map((draft, index) => ({
-      id: -(Math.abs(Number(draft.id.replace(/\\D/g, '')) || index + 1)),
+      id: -(Math.abs(Number(draft.id.replace(/\D/g, '')) || index + 1)),
       name: draft.name,
       highway: 'residential',
       coordinates: draft.coordinates,
@@ -1054,7 +1054,8 @@ export default function App() {
         }
       }
     }
-    setSignals(reset); setRoads([]); setSpeedLimit(40);
+    signalsRef.current = reset;
+    setSignals(reset); updateRoadDrafts([]); setSpeedLimit(40);
     setSelectedSignalId(reset[0]?.id || null); setSelectedRoadId(null);
     setComparison(null); setHistory([]);
     const fresh = createTrafficState();
@@ -1181,7 +1182,7 @@ export default function App() {
             </div>}
           </section>
 
-          {selectedRoad && <div className="selected-road-card"><div><Waypoints size={14} /><strong>{selectedRoad.name}</strong></div><p>Черновая линия геометрии. Её ещё нужно соединить с дорожным графом и правилами движения.</p><button onClick={() => { setRoads((previous) => previous.filter((road) => road.id !== selectedRoad.id)); setSelectedRoadId(null); }}>Удалить участок</button></div>}
+          {selectedRoad && <div className="selected-road-card"><div><Waypoints size={14} /><strong>{selectedRoad.name}</strong></div><p>Участок графа. Концы привязываются к существующим узлам, если они достаточно близко; неподключённый конец остаётся разрывом сети.</p><button onClick={() => { updateRoadDrafts(roadsRef.current.filter((road) => road.id !== selectedRoad.id)); setSelectedRoadId(null); }}>Удалить участок</button></div>}
 
           <section className="inspector-section metrics-section"><div className="section-heading"><span>ПОКАЗАТЕЛИ МОДЕЛИ</span><span className="model-badge">DEMO</span></div>
             <div className="metrics-grid">
