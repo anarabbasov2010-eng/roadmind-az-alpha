@@ -188,3 +188,58 @@ export function laneLineCollection(network: RoadNetwork) {
     }))
   };
 }
+
+export function routeLengthMeters(route: Position[]): number {
+  let total = 0;
+  for (let i = 1; i < route.length; i++) total += distanceMeters(route[i - 1], route[i]);
+  return total;
+}
+
+/** Find a directed cycle in the imported street graph so demo vehicles can follow real street geometry. */
+export function buildClosedSimulationRoute(network: RoadNetwork): Position[] | null {
+  if (network.edges.length < 3) return null;
+  const outgoing = new Map<string, NetworkEdge[]>();
+  for (const edge of network.edges) {
+    const list = outgoing.get(edge.from) || [];
+    list.push(edge);
+    outgoing.set(edge.from, list);
+  }
+  let best: Position[] | null = null;
+  let bestLength = 0;
+  const candidates = network.edges.slice(0, Math.min(180, network.edges.length));
+  for (const first of candidates) {
+    const baseId = first.id.replace(/:[fr]$/, '');
+    const queue = [first.to];
+    const previous = new Map<string, NetworkEdge | null>([[first.to, null]]);
+    let cursor = 0;
+    while (cursor < queue.length && !previous.has(first.from)) {
+      const current = queue[cursor++];
+      for (const edge of outgoing.get(current) || []) {
+        if (edge.id.replace(/:[fr]$/, '') === baseId || previous.has(edge.to)) continue;
+        previous.set(edge.to, edge);
+        queue.push(edge.to);
+        if (edge.to === first.from) break;
+      }
+    }
+    if (!previous.has(first.from)) continue;
+    const tail: NetworkEdge[] = [];
+    let node = first.from;
+    while (node !== first.to) {
+      const edge = previous.get(node);
+      if (!edge) { tail.length = 0; break; }
+      tail.push(edge);
+      node = edge.from;
+    }
+    if (!tail.length) continue;
+    tail.reverse();
+    const route: Position[] = [...first.geometry];
+    for (const edge of tail) route.push(...edge.geometry.slice(1));
+    if (route.length < 4) continue;
+    const length = routeLengthMeters(route);
+    if (length > bestLength && length >= 250 && length <= 12000) {
+      best = route;
+      bestLength = length;
+    }
+  }
+  return best;
+}
