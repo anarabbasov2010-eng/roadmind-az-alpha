@@ -978,6 +978,11 @@ export default function App() {
       flashToast('Светофор не привязан к перекрёстку дорожного графа и не влияет на движение машин.');
       return;
     }
+    const controllerNodeId = scenarioSignalNodeMapRef.current.get(selectedSignal.id);
+    if (controllerNodeId && microNetworkRef.current?.controllers.get(controllerNodeId)?.source === 'imported') {
+      flashToast('Для этого узла загружена утверждённая программа фаз. Сначала импортируйте изменённый план, чтобы менять её.');
+      return;
+    }
     setSignals((previous) => previous.map((signal) => signal.id === selectedSignal.id
       ? { ...signal, manualState: signal.manualState === 'red' ? 'green' : signal.manualState === 'green' ? null : 'red' }
       : signal));
