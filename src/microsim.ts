@@ -287,7 +287,7 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
   });
   for (const vehicle of updateOrder) {
     if (vehicle.activeMovementId) {
-      const movement = net.movements.find((item) => item.id === vehicle.activeMovementId);
+      const movement = net.movementsById.get(vehicle.activeMovementId);
       if (!movement) { vehicle.activeMovementId = null; vehicle.connectorDistance = 0; continue; }
       const targetTurnSpeed = movement.turnSpeedKmh / 3.6;
       const turnAcceleration = clamp((targetTurnSpeed - vehicle.speedMps) / dt, -config.emergencyDecelerationMps2, config.maxAccelerationMps2);
@@ -451,7 +451,7 @@ export function importSignalPlanJson(net: MicroNetwork, input: string): SignalPl
     if (!current) { errors.push('Неизвестный узел светофора: ' + (nodeId || '(пусто)')); continue; }
     if (!Array.isArray(item.phases) || item.phases.length < 1 || item.phases.length > 16) { errors.push(nodeId + ': число фаз должно быть от 1 до 16.'); continue; }
     const phases: SignalPhase[] = [];
-    const allowed = new Set(net.movements.filter((movement) => movement.nodeId === nodeId).map((movement) => movement.id));
+    const allowed = new Set((net.movementsByNode.get(nodeId) || []).map((movement) => movement.id));
     const covered = new Set<string>();
     for (const raw of item.phases as Array<Record<string, unknown>>) {
       const movementIds = Array.isArray(raw.movementIds) ? raw.movementIds.filter((id): id is string => typeof id === 'string') : [];
