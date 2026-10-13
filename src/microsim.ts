@@ -6,7 +6,7 @@ export type SignalColor = 'red' | 'yellow' | 'green';
 export type Movement = {
   id: string; nodeId: string; fromEdgeId: string; toEdgeId: string;
   kind: TurnKind; fromLane: number; toLane: number;
-  geometry: Position[]; lengthMeters: number; conflictIds: string[];
+  geometry: Position[]; lengthMeters: number; exitDistanceMeters: number; conflictIds: string[];
 };
 export type SignalPhase = { id: string; name: string; movementIds: string[]; greenSeconds: number; yellowSeconds: number; allRedSeconds: number };
 export type JunctionController = { nodeId: string; cycleOffsetSeconds: number; phases: SignalPhase[] };
@@ -49,20 +49,34 @@ function classifyTurn(a: number, b: number): TurnKind {
   return d > 32 ? 'right' : d < -32 ? 'left' : 'through';
 }
 function mix(a: Position, b: Position, t: number): Position { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
-function connector(from: NetworkEdge, to: NetworkEdge, kind: TurnKind): Position[] {
+function lanePoint(edge: NetworkEdge, point: Position, laneIndex: number): Position {
+  const a = edge.geometry[0], b = edge.geometry[edge.geometry.length - 1];
+  const latitude = point[1] * RAD, xScale = 111320 * Math.max(0.15, Math.cos(latitude));
+  const dx = (b[0] - a[0]) * xScale, dy = (b[1] - a[1]) * 110540;
+  const length = Math.hypot(dx, dy) || 1;
+  const offset = (edge.carriagewayOffsetMeters || 0) + (laneIndex - (laneCount(edge) - 1) / 2) * 3.25;
+  return [point[0] - (dy / length) * offset / xScale, point[1] + (dx / length) * offset / 110540];
+}
+function connector(from: NetworkEdge, to: NetworkEdge, kind: TurnKind, fromLane: number, toLane: number): { geometry: Position[]; exitDistanceMeters: number } {
   const node = from.geometry[from.geometry.length - 1];
-  const next = to.geometry[to.geometry.length - 1];
-  const start = mix(from.geometry[0], node, 0.84);
-  const end = mix(node, next, 0.16);
-  const control = mix(start, end, 0.5);
-  const lateral = kind === 'left' ? -0.000018 : kind === 'right' ? 0.000018 : 0;
-  const bend: Position = [control[0] + lateral, control[1] - lateral * 0.7];
-  const points: Position[] = [];
-  for (let i = 0; i <= 10; i++) {
-    const t = i / 10, u = 1 - t;
-    points.push([u * u * start[0] + 2 * u * t * bend[0] + t * t * end[0], u * u * start[1] + 2 * u * t * bend[1] + t * t * end[1]]);
+  const next = to.geometry[Math.min(1, to.geometry.length - 1)];
+  const startPoint = lanePoint(from, node, fromLane);
+  const endPoint = lanePoint(to, mix(node, next, 0.24), toLane);
+  const previous = lanePoint(from, from.geometry[Math.max(0, from.geometry.length - 2)], fromLane);
+  const outgoing = lanePoint(to, next, toLane);
+  const c1: Position = [startPoint[0] + (startPoint[0] - previous[0]) * 0.42, startPoint[1] + (startPoint[1] - previous[1]) * 0.42];
+  const lateral = kind === 'left' ? -0.000006 : kind === 'right' ? 0.000006 : 0;
+  const toNode = lanePoint(to, node, toLane);
+  const c2: Position = [endPoint[0] - (outgoing[0] - toNode[0]) * 0.18 + lateral, endPoint[1] - (outgoing[1] - toNode[1]) * 0.18 - lateral * 0.7];
+  const geometry: Position[] = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12, u = 1 - t;
+    geometry.push([
+      u ** 3 * startPoint[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t ** 3 * endPoint[0],
+      u ** 3 * startPoint[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t ** 3 * endPoint[1]
+    ]);
   }
-  return points;
+  return { geometry, exitDistanceMeters: distance(node, mix(node, next, 0.24)) };
 }
 function lineCross(a: Position, b: Position, c: Position, d: Position): boolean {
   const orient = (p: Position, q: Position, r: Position) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
@@ -88,20 +102,23 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
       const kind = classifyTurn(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]));
       if (Math.abs(deltaAngle(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]))) > 150 && (outgoing.get(nodeId) || []).length > 1) continue;
       const countIn = laneCount(from), countOut = laneCount(to);
-      const geometry = connector(from, to, kind);
-      let lengthMeters = 0;
-      for (let i = 1; i < geometry.length; i++) lengthMeters += distance(geometry[i - 1], geometry[i]);
       const lanePairs: Array<[number, number]> = [];
       for (let lane = 0; lane < countIn; lane++) {
         // Without mapped turn:lanes tags, all lanes are provisionally permissive.
         const toLane = kind === 'left' ? Math.min(countOut - 1, lane) : kind === 'right' ? Math.max(0, countOut - countIn + lane) : clamp(lane, 0, countOut - 1);
         lanePairs.push([lane, toLane]);
       }
-      for (const [fromLane, toLane] of lanePairs) movements.push({
-        id: nodeId + ':' + from.id + ':' + to.id + ':' + fromLane, nodeId,
-        fromEdgeId: from.id, toEdgeId: to.id, kind, fromLane, toLane,
-        geometry, lengthMeters: Math.max(2, lengthMeters), conflictIds: []
-      });
+      for (const [fromLane, toLane] of lanePairs) {
+        const curve = connector(from, to, kind, fromLane, toLane);
+        let lengthMeters = 0;
+        for (let i = 1; i < curve.geometry.length; i++) lengthMeters += distance(curve.geometry[i - 1], curve.geometry[i]);
+        movements.push({
+          id: nodeId + ':' + from.id + ':' + to.id + ':' + fromLane, nodeId,
+          fromEdgeId: from.id, toEdgeId: to.id, kind, fromLane, toLane,
+          geometry: curve.geometry, lengthMeters: Math.max(2, lengthMeters),
+          exitDistanceMeters: curve.exitDistanceMeters, conflictIds: []
+        });
+      }
     }
   }
   const movementsAtNode = new Map<string, Movement[]>();
@@ -207,7 +224,7 @@ export function vehiclePosition(net: MicroNetwork, vehicle: MicroVehicle): Posit
     }
   }
   const t = clamp(vehicle.distanceOnEdge / edgeLen(edge), 0, 1);
-  return mix(edge.geometry[0], edge.geometry[edge.geometry.length - 1], t);
+  return lanePoint(edge, mix(edge.geometry[0], edge.geometry[edge.geometry.length - 1], t), vehicle.laneIndex);
 }
 export function vehicleBearing(net: MicroNetwork, vehicle: MicroVehicle): number {
   if (vehicle.activeMovementId) {
@@ -246,7 +263,7 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
       if (vehicle.connectorDistance >= movement.lengthMeters) {
         vehicle.activeMovementId = null; vehicle.connectorDistance = 0;
         vehicle.routeIndex = Math.min(vehicle.routeIndex + 1, vehicle.routeEdgeIds.length - 1);
-        vehicle.distanceOnEdge = 0;
+        vehicle.distanceOnEdge = movement.exitDistanceMeters;
         vehicle.laneIndex = clamp(movement.toLane, 0, Math.max(0, laneCount(net.edgesById.get(movement.toEdgeId)!) - 1));
       }
       continue;
