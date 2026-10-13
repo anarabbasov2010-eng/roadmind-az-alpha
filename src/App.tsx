@@ -551,6 +551,18 @@ export default function App() {
           features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: route }, properties: { kind: 'imported-street-cycle', lengthKm: simulationRouteLengthKmRef.current } }]
         } as never);
         (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(trafficRef.current, route) as never);
+      } else {
+        simulationRouteRef.current = DEMO_ROUTE;
+        simulationRouteLengthKmRef.current = 2.6;
+        const fallbackSignals = signalsRef.current.map((signal) => ({
+          ...signal,
+          progress: progressForCoordinate(DEMO_ROUTE, signal.coordinates),
+          connectedToDemoRoute: distanceToRouteMeters(DEMO_ROUTE, signal.coordinates) <= 55
+        }));
+        signalsRef.current = fallbackSignals;
+        setSignals(fallbackSignals);
+        (map.getSource('rm-simulation-route') as GeoJSONSource | undefined)?.setData(emptyCollection() as never);
+        (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(trafficRef.current, DEMO_ROUTE) as never);
       }
       (map.getSource('rm-road-graph-lanes') as GeoJSONSource | undefined)?.setData(laneLineCollection(network) as never);
       (map.getSource('rm-road-graph-nodes') as GeoJSONSource | undefined)?.setData(networkNodeCollection(network) as never);
