@@ -817,7 +817,7 @@ export default function App() {
             <div className="signal-list">{signals.map((signal, index) => {
               const red = isSignalRed(signal, traffic.time);
               return <button key={signal.id} className={'signal-row ' + (signal.id === selectedSignalId ? 'selected' : '')} onClick={() => { setSelectedSignalId(signal.id); setSelectedRoadId(null); mapRef.current?.easeTo({ center: signal.coordinates, zoom: Math.max(15, mapRef.current?.getZoom() || 0), duration: 550, essential: true }); }}>
-                <span className={'signal-glyph ' + (red ? 'red' : 'green')}><i /><i /><i /></span>
+                <img className="signal-preview" src={red ? './icons/traffic-light-red.svg' : './icons/traffic-light-green.svg'} alt={red ? 'Красный сигнал' : 'Зелёный сигнал'} />
                 <span className="signal-copy"><strong>{signal.name}</strong><small>{signal.connectedToDemoRoute ? 'связан с тестовым маршрутом' : 'только сценарный объект'} · {index === 0 ? 'исходный' : 'изменение'}</small></span>
                 <span className={'signal-state-label ' + (red ? 'red' : 'green')}>{red ? 'STOP' : 'GO'}</span>
               </button>;
