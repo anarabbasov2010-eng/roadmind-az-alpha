@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "description": "RoadMind AZ — a desktop digital-twin lab for road-infrastructure scenarios in Baku.",
-  "author": "RoadMind AZ Team",
+  "author": "242NM",
   "license": "MIT",
   "type": "module",
   "main": "electron/main.cjs",
@@ -36,13 +36,21 @@
   },
   "build": {
     "appId": "az.roadmind.desktop",
-    "productName": "RoadMind AZ Alpha",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "package.json"],
+    "productName": "RoadMind AZ",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
     "win": {
       "icon": "electron/roadmind.ico",
-      "target": ["nsis"],
-      "artifactName": "RoadMind-AZ-Alpha-0.2.0-Setup.exe"
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "RoadMind-AZ-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
