@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
-  Clock3, Compass, Download, Eraser, Eye, Gauge, GitCompareArrows, LocateFixed,
+  Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
   Map as MapIcon, Pause, Play, Plus, RadioTower, RefreshCw, RotateCcw, Save,
   Settings2, TrafficCone, Waypoints, X, ZoomIn, ZoomOut
 } from 'lucide-react';
@@ -29,8 +29,8 @@ type TrafficMetrics = { averageSpeed: number; stopped: number; queueMeters: numb
 
 const STORAGE_KEY = 'roadmind-az-scenario-v2';
 const BAKU: Position = [49.8672, 40.3893];
-const RED = '#e66d64';
-const GREEN = '#5fc2a9';
+const RED = '#d94c45';
+const GREEN = '#21865f';
 
 function initialSignals(): ScenarioSignal[] {
   const point = pointAtProgress(DEMO_ROUTE, 0.275);
@@ -61,6 +61,7 @@ function signalCollection(signals: ScenarioSignal[], time: number): FeatureColle
       properties: {
         id: signal.id, name: signal.name,
         state: isSignalRed(signal, time) ? 'red' : 'green',
+        icon: isSignalRed(signal, time) ? 'rm-signal-red' : 'rm-signal-green',
         connected: signal.connectedToDemoRoute,
         manual: signal.manualState !== null
       }
@@ -126,15 +127,11 @@ function importedSignalCollection(signals: OSMSignal[]): FeatureCollection {
     type: 'FeatureCollection',
     features: signals.map((signal) => ({
       type: 'Feature', id: signal.id, geometry: { type: 'Point', coordinates: signal.coordinates },
-      properties: { id: signal.id, name: signal.name, direction: signal.direction || '' }
+      properties: { id: signal.id, name: signal.name, direction: signal.direction || '', icon: 'rm-signal-reference', state: 'unknown' }
     }))
   };
 }
 
-function formatClock(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
-}
 function formatTime(date: Date | null): string {
   if (!date) return 'нет данных';
   return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -153,7 +150,20 @@ function metricsFor(state: TrafficState): TrafficMetrics {
   };
 }
 
-function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]) {
+function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void> {
+  // Image loading is handled before the layers are registered.
+  return addMapLayersWithAssets(map, signals);
+}
+
+async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void> {
+  const [redSignal, greenSignal, referenceSignal] = await Promise.all([
+    loadSvgImage('./icons/traffic-light-red.svg'),
+    loadSvgImage('./icons/traffic-light-green.svg'),
+    loadSvgImage('./icons/traffic-light-reference.svg')
+  ]);
+  map.addImage('rm-signal-red', redSignal, { pixelRatio: 2 });
+  map.addImage('rm-signal-green', greenSignal, { pixelRatio: 2 });
+  map.addImage('rm-signal-reference', referenceSignal, { pixelRatio: 2 });
   const labelLayer = map.getStyle().layers?.find((layer) =>
     layer.type === 'symbol' && Boolean(layer.layout && 'text-field' in layer.layout)
   )?.id;
@@ -166,10 +176,11 @@ function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]) {
       id: 'rm-3d-buildings', type: 'fill-extrusion', source: 'rm-buildings', 'source-layer': 'building', minzoom: 14,
       filter: ['!=', ['get', 'hide_3d'], true],
       paint: {
-        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 12], 0, '#334340', 45, '#5a6c66', 160, '#82918a'],
-        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.5, ['coalesce', ['get', 'render_height'], ['get', 'height'], 12]],
+        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 9], 0, '#e3e4dc', 18, '#d2d8cf', 55, '#c5d0c5', 140, '#b5c3b7'],
+        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13.8, 0, 15, ['coalesce', ['get', 'render_height'], ['get', 'height'], 9]],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.85
+        'fill-extrusion-opacity': 0.94,
+        'fill-extrusion-vertical-gradient': true
       }
     }, labelLayer);
   }
@@ -178,31 +189,77 @@ function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]) {
     type: 'FeatureCollection',
     features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: DEMO_ROUTE }, properties: { label: 'Схематический тестовый маршрут' } }]
   } as never });
-  map.addLayer({ id: 'rm-demo-casing', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#13211f', 'line-width': 9, 'line-opacity': 0.72 } });
-  map.addLayer({ id: 'rm-demo-line', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': GREEN, 'line-width': 2.6, 'line-opacity': 0.94, 'line-dasharray': [2, 1.5] } });
+  map.addLayer({ id: 'rm-demo-casing', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#aab3a8', 'line-width': 5, 'line-opacity': 0.36 } });
+  map.addLayer({ id: 'rm-demo-line', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#83988b', 'line-width': 1.15, 'line-opacity': 0.64, 'line-dasharray': [1.8, 2.5] } });
 
   map.addSource('rm-osm-roads', { type: 'geojson', data: emptyCollection() as never });
+  const roadWidth = ['*',
+    ['interpolate', ['linear'], ['zoom'], 10, 0.8, 13, 2.6, 16, 6.5, 19, 10.5],
+    ['match', ['get', 'roadClass'],
+      'motorway', 1.42, 'trunk', 1.3, 'primary', 1.18, 'secondary', 1.03,
+      'tertiary', 0.88, 'unclassified', 0.76, 0.62
+    ]
+  ] as never;
+  map.addLayer({
+    id: 'rm-osm-roads-casing', type: 'line', source: 'rm-osm-roads',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#a9b0a7', 'line-width': ['+', roadWidth, 2.2] as never, 'line-opacity': 0.78 }
+  }, labelLayer);
   map.addLayer({
     id: 'rm-osm-roads-line', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': ['match', ['get', 'roadClass'], 'motorway', '#d4ac76', 'trunk', '#d4ac76', 'primary', '#e2bd86', 'secondary', '#9cbbb2', 'tertiary', '#7d9a91', '#61766f'],
-      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.7, 14, 2, 18, 4.2],
-      'line-opacity': 0.88
+      'line-color': ['match', ['get', 'roadClass'],
+        'motorway', '#f8f0dc', 'trunk', '#f7f0dc', 'primary', '#f7f3e8',
+        'secondary', '#e5e7df', 'tertiary', '#f4f4ed', 'unclassified', '#edece5',
+        'residential', '#e7e8e1', 'living_street', '#e1e3dc', 'service', '#e5e7df', '#ecece6'
+      ],
+      'line-width': roadWidth as never,
+      'line-opacity': 0.97
     }
-  });
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-osm-road-markings', type: 'line', source: 'rm-osm-roads',
+    filter: ['match', ['get', 'roadClass'], 'motorway', true, 'trunk', true, 'primary', true, 'secondary', true, 'tertiary', true, false],
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.35, 15, 0.8, 18, 1.15],
+      'line-opacity': 0.88,
+      'line-dasharray': [2.1, 3]
+    }
+  }, labelLayer);
 
   map.addSource('rm-osm-signals', { type: 'geojson', data: emptyCollection() as never });
-  map.addLayer({ id: 'rm-osm-signal-halo', type: 'circle', source: 'rm-osm-signals', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 9], 'circle-color': '#e2b879', 'circle-opacity': 0.17, 'circle-blur': 0.25 } });
-  map.addLayer({ id: 'rm-osm-signal-points', type: 'circle', source: 'rm-osm-signals', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 2.5, 17, 5.5], 'circle-color': '#e2b879', 'circle-stroke-color': '#252d29', 'circle-stroke-width': 1.5 } });
+  map.addLayer({ id: 'rm-osm-signal-halo', type: 'circle', source: 'rm-osm-signals', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 7], 'circle-color': '#c89e5c', 'circle-opacity': 0.10, 'circle-blur': 0.3 } });
+  map.addLayer({
+    id: 'rm-osm-signal-points', type: 'symbol', source: 'rm-osm-signals',
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.45, 14, 0.76, 17, 0.95, 20, 1.05],
+      'icon-anchor': 'bottom',
+      'icon-rotation-alignment': 'viewport',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true
+    }
+  });
 
   map.addSource('rm-user-roads', { type: 'geojson', data: emptyCollection() as never });
   map.addLayer({ id: 'rm-user-road-line', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#f0c17e', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.5, 18, 5.5], 'line-opacity': 0.98 } });
 
   map.addSource('rm-user-signals', { type: 'geojson', data: signalCollection(signals, 0) as never });
-  map.addLayer({ id: 'rm-user-signal-halo', type: 'circle', source: 'rm-user-signals', paint: { 'circle-radius': 15, 'circle-color': ['match', ['get', 'state'], 'red', RED, GREEN], 'circle-opacity': 0.16, 'circle-blur': 0.4 } });
-  map.addLayer({ id: 'rm-user-signal-points', type: 'circle', source: 'rm-user-signals', paint: { 'circle-radius': 6.2, 'circle-color': ['match', ['get', 'state'], 'red', RED, GREEN], 'circle-stroke-color': '#f0f2ea', 'circle-stroke-width': 1.8 } });
-  map.addLayer({ id: 'rm-user-signal-label', type: 'symbol', source: 'rm-user-signals', layout: { 'text-field': 'S', 'text-font': ['Open Sans Bold'], 'text-size': 9, 'text-offset': [0, 0.05], 'text-allow-overlap': true }, paint: { 'text-color': '#15201d' } });
+  map.addLayer({ id: 'rm-user-signal-halo', type: 'circle', source: 'rm-user-signals', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 5, 17, 11], 'circle-color': ['match', ['get', 'state'], 'red', '#d94c45', '#21865f'], 'circle-opacity': 0.13, 'circle-blur': 0.55 } });
+  map.addLayer({
+    id: 'rm-user-signal-points', type: 'symbol', source: 'rm-user-signals',
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.45, 14, 0.76, 17, 0.95, 20, 1.05],
+      'icon-anchor': 'bottom',
+      'icon-rotation-alignment': 'viewport',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true
+    }
+  });
 
   map.addSource('rm-vehicles', { type: 'geojson', data: carsCollection(createTrafficState()) as never });
   map.addImage('rm-car', carIcon('#63bdae'), { pixelRatio: 2 });
@@ -213,7 +270,6 @@ function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]) {
     paint: { 'icon-opacity': ['case', ['get', 'stopped'], 0.74, 1] }
   });
 
-  map.addSource('rm-saved-roads', { type: 'geojson', data: roadCollection([]) as never });
 }
 
 export default function App() {
@@ -247,8 +303,7 @@ export default function App() {
   const [osmUpdatedAt, setOsmUpdatedAt] = useState<Date | null>(null);
   const [osmStatus, setOsmStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [mapZoom, setMapZoom] = useState(12.8);
-  const [scenarioName, setScenarioName] = useState(stored.name || 'Баку · центральный узел');
+    const [scenarioName, setScenarioName] = useState(stored.name || 'Баку · центральный узел');
   const [showOsmRoads, setShowOsmRoads] = useState(true);
   const [showOsmSignals, setShowOsmSignals] = useState(true);
   const [showDemo, setShowDemo] = useState(true);
@@ -258,7 +313,6 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [comparison, setComparison] = useState<{ baseline: TrafficMetrics; current: TrafficMetrics } | null>(null);
   const [isComparing, setIsComparing] = useState(false);
-  const [showDataNotice, setShowDataNotice] = useState(true);
   const [history, setHistory] = useState<number[]>([]);
 
   const selectedSignal = signals.find((signal) => signal.id === selectedSignalId) || null;
@@ -408,34 +462,34 @@ export default function App() {
     if (!container || mapRef.current) return;
     const map = new maplibregl.Map({
       container,
-      style: 'https://tiles.openfreemap.org/styles/dark',
+      style: 'https://tiles.openfreemap.org/styles/bright',
       center: BAKU,
-      zoom: 12.8,
-      pitch: 42,
-      bearing: 0,
-      minZoom: 4.5,
-      maxZoom: 21,
-      maxPitch: 62,
+      zoom: 13.9,
+      pitch: 44,
+      bearing: -6,
+      minZoom: 5,
+      maxZoom: 20.5,
+      maxPitch: 58,
       zoomSnap: 0,
       fadeDuration: 140,
       refreshExpiredTiles: true,
       renderWorldCopies: false,
       attributionControl: false,
-      canvasContextAttributes: { antialias: false, powerPreference: 'high-performance' }
+      canvasContextAttributes: { antialias: true, powerPreference: 'high-performance' }
     });
     mapRef.current = map;
     map.scrollZoom.enable({ around: 'center' });
-    map.scrollZoom.setWheelZoomRate(1 / 650);
+    map.scrollZoom.setWheelZoomRate(1 / 850);
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
     const failTimer = window.setTimeout(() => {
       if (!map.isStyleLoaded()) setMapStatus('error');
     }, 15000);
-    map.on('load', () => {
+    map.on('load', async () => {
       window.clearTimeout(failTimer);
       try {
-        addMapLayers(map, signalsRef.current);
+        await addMapLayers(map, signalsRef.current);
         (map.getSource('rm-user-signals') as GeoJSONSource).setData(signalCollection(signalsRef.current, trafficRef.current.time) as never);
         (map.getSource('rm-user-roads') as GeoJSONSource).setData(roadCollection(roadsRef.current) as never);
         (map.getSource('rm-vehicles') as GeoJSONSource).setData(carsCollection(trafficRef.current) as never);
@@ -446,7 +500,6 @@ export default function App() {
         setMapStatus('error');
       }
     });
-    map.on('zoomend', () => setMapZoom(map.getZoom()));
     map.on('error', () => console.debug('Map service reported a tile or style error.'));
     map.on('moveend', () => {
       if (map.getZoom() < 12.5 || osmBusy) return;
@@ -555,7 +608,9 @@ export default function App() {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
     const vis = (id: string, shown: boolean) => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', shown ? 'visible' : 'none'); };
+    vis('rm-osm-roads-casing', showOsmRoads);
     vis('rm-osm-roads-line', showOsmRoads);
+    vis('rm-osm-road-markings', showOsmRoads);
     vis('rm-osm-signal-halo', showOsmSignals);
     vis('rm-osm-signal-points', showOsmSignals);
     vis('rm-demo-casing', showDemo);
@@ -563,7 +618,8 @@ export default function App() {
     vis('rm-vehicles-layer', showCars);
     vis('rm-user-signal-halo', showUserSignals);
     vis('rm-user-signal-points', showUserSignals);
-    vis('rm-user-signal-label', showUserSignals);
+    vis('rm-user-road-casing', true);
+    vis('rm-user-road-marking', true);
     vis('rm-3d-buildings', showBuildings && is3D);
   }, [showOsmRoads, showOsmSignals, showDemo, showCars, showUserSignals, showBuildings, is3D, mapStatus]);
 
@@ -593,7 +649,7 @@ export default function App() {
   }, []);
 
   const zoomBaku = useCallback(() => {
-    mapRef.current?.flyTo({ center: BAKU, zoom: 12.8, pitch: is3D ? 42 : 0, bearing: 0, duration: 900, speed: 1.25, essential: true });
+    mapRef.current?.flyTo({ center: BAKU, zoom: 14.2, pitch: is3D ? 44 : 0, bearing: -6, duration: 900, speed: 1.15, essential: true });
   }, [is3D]);
   const zoomCountry = useCallback(() => {
     setIs3D(false);
@@ -601,7 +657,7 @@ export default function App() {
   }, []);
   const toggle3D = useCallback((enabled: boolean) => {
     setIs3D(enabled);
-    mapRef.current?.easeTo({ pitch: enabled ? 42 : 0, bearing: 0, duration: 520, essential: true });
+    mapRef.current?.easeTo({ pitch: enabled ? 44 : 0, bearing: -6, duration: 520, essential: true });
   }, []);
 
   const changeMode = (next: ToolMode) => {
@@ -669,18 +725,17 @@ export default function App() {
     flashToast('Сценарий возвращён к исходным параметрам.');
   };
 
-  const queueLabel = metrics.stopped === 1 ? 'автомобиль остановлен' : 'автомобилей остановлено';
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-lockup">
           <img className="brand-icon" src="./roadmind-icon.svg" alt="" />
-          <div className="brand-wordmark"><strong>roadmind<span>az</span></strong><small>DIGITAL TWIN LAB</small></div>
+          <div className="brand-wordmark"><strong>roadmind<span> az</span></strong><small>ДОРОЖНАЯ ЛАБОРАТОРИЯ</small></div>
         </div>
         <div className="topbar-divider" />
-        <div className="workspace-name"><span className="workspace-dot" /><div><strong>Баку · Alpha workspace</strong><small>Дорожная исследовательская среда</small></div><ChevronDown size={14} /></div>
-        <div className="topbar-center"><span className="sim-live"><i />{isRunning ? 'СИМУЛЯЦИЯ АКТИВНА' : 'СИМУЛЯЦИЯ НА ПАУЗЕ'}</span><span className="topbar-separator" /><span className="sim-clock">T+ {formatClock(traffic.time)}</span></div>
+        <div className="workspace-name"><span className="workspace-dot" /><div><strong>Баку · проект</strong><small>Дорожная инфраструктура</small></div><ChevronDown size={14} /></div>
+        <div className="topbar-center"><span className="sim-live"><i />{isRunning ? 'Движение в модели' : 'Модель на паузе'}</span></div>
         <div className="topbar-actions">
           <button className="icon-button" title="О проекте" onClick={() => flashToast('RoadMind AZ Alpha 0.2 · цифровая лаборатория дорожных сценариев Баку.')}><CircleHelp size={17} /></button>
           <button className="icon-button" title="Данные карты" onClick={() => flashToast('Базовая карта: OpenFreeMap / OpenStreetMap. Светофоры в OSM не содержат текущую фазу сигнала.')}><Settings2 size={17} /></button>
@@ -690,7 +745,7 @@ export default function App() {
 
       <div className="workspace">
         <aside className="left-sidebar">
-          <div className="sidebar-section-title">ИНСТРУМЕНТЫ <span>01</span></div>
+          <div className="sidebar-section-title">Инструменты</div>
           <div className="tool-grid">
             <button className={'tool-tile ' + (mode === 'select' ? 'selected' : '')} onClick={() => changeMode('select')}><Compass size={17} /><span>Навигация</span><kbd>V</kbd></button>
             <button className={'tool-tile ' + (mode === 'signal' ? 'selected' : '')} onClick={() => changeMode('signal')}><TrafficCone size={17} /><span>Светофор</span><kbd>S</kbd></button>
@@ -700,7 +755,7 @@ export default function App() {
           <div className="mode-hint">{mode === 'select' ? 'Перемещайте карту, выбирайте свои объекты.' : mode === 'signal' ? 'Разместите сценарный светофор на карте.' : mode === 'road' ? 'Отметьте начало и конец участка дороги.' : 'Удаляйте элементы, созданные в сценарии.'}</div>
 
           <div className="sidebar-divider" />
-          <div className="sidebar-section-title">СЛОИ КАРТЫ <span>02</span></div>
+          <div className="sidebar-section-title">Слои карты</div>
           <LayerToggle icon={<Building2 size={15} />} label="3D-застройка" detail="Доступные данные OpenFreeMap" checked={showBuildings && is3D} onChange={(value) => { setShowBuildings(value); if (value && !is3D) toggle3D(true); }} />
           <LayerToggle icon={<Waypoints size={15} />} label="OSM · дороги" detail={osmRoads.length ? osmRoads.length + ' геометрий загружено' : 'Загрузка по текущему району'} checked={showOsmRoads} onChange={setShowOsmRoads} />
           <LayerToggle icon={<RadioTower size={15} />} label="OSM · светофоры" detail={osmSignals.length ? osmSignals.length + ' отмечено в OSM' : 'Только размеченные объекты'} checked={showOsmSignals} onChange={setShowOsmSignals} />
@@ -714,15 +769,15 @@ export default function App() {
           <p className="sidebar-note">Базовые векторные тайлы онлайн обновляются поставщиком по собственному графику (планетарный набор OpenFreeMap — еженедельно). Синхронизация выше запрашивает текущие OSM-данные только для небольшого района.</p>
 
           <div className="sidebar-bottom">
-            <div className="footer-status"><span className={'status-dot ' + mapStatus} /><span>{mapStatus === 'ready' ? 'Карта подключена' : mapStatus === 'error' ? 'Проблема с картой' : 'Подключение карты…'}</span></div>
-            <span>ROAD NETWORK LAB · 0.2.0</span>
+            <div className="footer-status"><span className={'status-dot ' + mapStatus} /><span>{mapStatus === 'ready' ? 'Карта загружена' : mapStatus === 'error' ? 'Нет соединения с картой' : 'Загрузка карты…'}</span></div>
+            <span>RoadMind AZ · Alpha</span>
           </div>
         </aside>
 
         <section className="map-workspace" aria-label="Интерактивная карта Баку и Азербайджана">
           <div ref={mapContainerRef} className="map-container" />
-          <div className="map-vignette" />
-          <div className="map-heading"><div className="map-heading-kicker"><span className="tiny-coordinate-dot" /> DIGITAL TWIN / AZ-BAK</div><h1>Баку <span>·</span> дорожная модель</h1><p>40.3893° N <i /> 49.8672° E <i /> {is3D ? '3D перспектива' : '2D сверху'}</p></div>
+          
+          <div className="map-heading"><h1>Баку</h1><p>Редактор дорожной инфраструктуры</p></div>
 
           <div className="map-floating-tools">
             <button onClick={zoomBaku} title="Центрировать Баку"><LocateFixed size={16} /></button>
@@ -738,26 +793,19 @@ export default function App() {
             <button title="Вернуть на север" onClick={() => mapRef.current?.easeTo({ bearing: 0, duration: 350 })}><Compass size={15} /></button>
           </div>
 
-          <div className="map-legend"><span><i className="legend-road" />OSM-дороги</span><span><i className="legend-car" />Симуляция</span><span><i className="legend-signal" />Светофор OSM</span></div>
-          <div className="map-metric-card">
-            <div className="metric-card-header"><span>СИНТЕТИЧЕСКАЯ СИМУЛЯЦИЯ</span><span className={'simulation-state ' + (isRunning ? 'running' : '')}><i />{isRunning ? 'RUNNING' : 'PAUSED'}</span></div>
-            <div className="metric-main"><div><strong>{metrics.averageSpeed}</strong><small>км/ч · средняя скорость</small></div><div className="metric-separator" /><div><strong>{metrics.queueMeters}<em> м</em></strong><small>длина очереди · модель</small></div></div>
-            <div className="metric-progress"><span style={{ width: Math.min(100, metrics.averageSpeed / Math.max(1, speedLimit) * 100) + '%' }} /></div>
-            <div className="metric-foot"><span>{metrics.stopped} {queueLabel}</span><span>{traffic.vehicles.length} агентов</span></div>
-          </div>
-          <div className="map-bottom-left"><span className="coordinate-pill">EPSG:3857</span><span className="data-dot" />{mapStatus === 'ready' ? 'Basemap online · OpenFreeMap' : 'Basemap status · ' + mapStatus}<span className="data-dot" />Zoom {mapZoom.toFixed(1)}<span className="data-dot" />© OpenStreetMap</div>
+          <div className="map-legend"><span><i className="legend-road" />Дороги</span><span><i className="legend-car" />Автомобили</span><span><i className="legend-signal" />Светофоры</span></div>
+          <div className="map-bottom-left"><span className={'status-dot ' + mapStatus} />{mapStatus === 'ready' ? 'Карта онлайн' : mapStatus === 'error' ? 'Карта недоступна' : 'Загрузка карты'}</div>
           <div className="map-bottom-controls">
             <button title="Сбросить сценарий" onClick={resetScenario}><RotateCcw size={15} /></button><span />
             <button title="Скорость симуляции" onClick={() => setSpeedMultiplier((value) => value >= 4 ? 1 : value + 1)}><Gauge size={15} /><small>{speedMultiplier}×</small></button>
             <button className={'play-button ' + (isRunning ? 'playing' : '')} title={isRunning ? 'Пауза' : 'Запустить'} onClick={() => setIsRunning((value) => !value)}>{isRunning ? <Pause size={16} /> : <Play size={16} />}</button>
           </div>
-          {showDataNotice && <div className="data-notice"><span><AlertTriangle size={15} /></span><div><strong>Границы точности Alpha</strong><p>Машины и метрики синтетические. OSM-светофор — отметка на карте, без реальной фазы и программы.</p></div><button onClick={() => setShowDataNotice(false)} aria-label="Закрыть предупреждение"><X size={14} /></button></div>}
           {mapStatus === 'error' && <div className="map-error"><AlertTriangle size={17} /><strong>Не удалось загрузить карту</strong><p>Проверьте подключение к интернету. Онлайн-тайлы карты недоступны.</p><button onClick={() => window.location.reload()}><RefreshCw size={14} />Повторить</button></div>}
         </section>
 
         <aside className="right-sidebar">
           <div className="inspector-header"><div><span className="section-eyebrow">SCENARIO INSPECTOR</span><h2>Сценарий</h2></div><button className="icon-button" title="Сбросить" onClick={resetScenario}><RotateCcw size={15} /></button></div>
-          <div className="scenario-card"><div className="scenario-topline"><span>SCN / BAKU-01</span><span className="draft-badge"><i />DRAFT</span></div><input aria-label="Название сценария" value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /><div className="scenario-footer"><span><Clock3 size={12} /> Автосохранение локально</span><span>v.02</span></div></div>
+          <div className="scenario-card"><div className="scenario-topline"><span>Текущий сценарий</span><span className="draft-badge"><i />Черновик</span></div><input aria-label="Название сценария" value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /><div className="scenario-footer"><span><Clock3 size={12} /> Автосохранение на этом компьютере</span></div></div>
 
           <section className="inspector-section"><div className="section-heading"><span>ПАРАМЕТРЫ МОДЕЛИ</span><button title="Ограничения модели" onClick={() => flashToast('Скорость и светофоры влияют только на синтетическую модель, не на официальную дорожную сеть.')}><CircleHelp size={13} /></button></div>
             <div className="control-row"><span>Лимит скорости модели</span><strong>{speedLimit} <small>км/ч</small></strong></div>
@@ -803,7 +851,7 @@ export default function App() {
           {comparison && <div className="comparison-result"><div className="comparison-header"><Check size={14} />СРАВНЕНИЕ <button onClick={() => setComparison(null)}><X size={13} /></button></div><p>12 минут синтетической симуляции при одинаковом количестве виртуальных агентов.</p><div><span>Средняя скорость</span><strong>{comparison.baseline.averageSpeed} → {comparison.current.averageSpeed} км/ч <em>{speedDelta !== null && speedDelta > 0 ? '+' : ''}{speedDelta}</em></strong></div><div><span>Длина очереди</span><strong>{comparison.baseline.queueMeters} → {comparison.current.queueMeters} м <em>{queueDelta !== null && queueDelta > 0 ? '−' : '+'}{Math.abs(queueDelta || 0)} м</em></strong></div></div>}
         </aside>
       </div>
-      <footer className="statusbar"><div><span className={'status-dot ' + mapStatus} /><strong>{mapStatus === 'ready' ? 'КАРТА РАБОТАЕТ' : mapStatus === 'error' ? 'ОФЛАЙН / НЕТ ТАЙЛОВ' : 'ЗАГРУЗКА КАРТЫ'}</strong><span className="status-divider" /><span>{osmStatus === 'ok' ? 'OSM: ' + formatTime(osmUpdatedAt) : 'OSM: ' + osmStatus}</span></div><div><span><Eye size={12} /> Прототип, не инженерный прогноз</span><span className="status-divider" /><span>RoadMind AZ · 2026</span></div></footer>
+      <footer className="statusbar"><div><span className={'status-dot ' + mapStatus} /><span>{mapStatus === 'ready' ? 'Карта подключена' : mapStatus === 'error' ? 'Нет соединения' : 'Загрузка карты'}</span><span className="status-divider" /><span>{osmStatus === 'ok' ? 'Данные дорог · ' + formatTime(osmUpdatedAt) : osmStatus === 'loading' ? 'Обновление дорожных данных…' : 'Данные дорог не обновлены'}</span></div><div><span>Автомобили и показатели — демонстрационная модель</span><span className="status-divider" /><span>RoadMind AZ</span></div></footer>
       {toast && <div className="toast-message"><span className="toast-icon"><Check size={14} /></span>{toast}</div>}
     </main>
   );
