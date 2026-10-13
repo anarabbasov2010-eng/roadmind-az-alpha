@@ -160,7 +160,7 @@ function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]) {
   )?.id;
 
   if (!map.getSource('rm-buildings')) {
-    map.addSource('rm-buildings', { type: 'vector', url: 'https://tiles.openfreemap.org/planet' });
+    map.addSource('rm-buildings', { type: 'vector', url: 'https://tiles.openfreemap.org/planet/latest' });
   }
   if (!map.getLayer('rm-3d-buildings')) {
     map.addLayer({
@@ -413,7 +413,7 @@ export default function App() {
       }
     });
     map.on('zoomend', () => setMapZoom(map.getZoom()));
-    map.on('error', (event: { error?: Error }) => console.debug('Map service event:', event.error?.message || ''));
+    map.on('error', () => console.debug('Map service reported a tile or style error.'));
     map.on('moveend', () => {
       if (map.getZoom() < 12.5 || osmBusy) return;
       if (lastAutoTimerRef.current !== null) window.clearTimeout(lastAutoTimerRef.current);
@@ -562,8 +562,8 @@ export default function App() {
     mapRef.current?.flyTo({ center: BAKU, zoom: 12.8, pitch: is3D ? 42 : 0, bearing: 0, duration: 900, speed: 1.25, essential: true });
   }, [is3D]);
   const zoomCountry = useCallback(() => {
-    mapRef.current?.flyTo({ center: AZERBAIJAN, zoom: 6.15, pitch: 0, bearing: 0, duration: 1000, speed: 1.1, essential: true });
     setIs3D(false);
+    mapRef.current?.fitBounds([[44.75, 38.38], [50.62, 41.90]], { padding: 52, duration: 1000, maxZoom: 6.4, essential: true });
   }, []);
   const toggle3D = useCallback((enabled: boolean) => {
     setIs3D(enabled);
