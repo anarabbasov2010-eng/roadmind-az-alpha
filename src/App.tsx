@@ -29,7 +29,6 @@ type TrafficMetrics = { averageSpeed: number; stopped: number; queueMeters: numb
 
 const STORAGE_KEY = 'roadmind-az-scenario-v2';
 const BAKU: Position = [49.8672, 40.3893];
-const AZERBAIJAN: Position = [47.58, 40.42];
 const RED = '#e66d64';
 const GREEN = '#5fc2a9';
 
