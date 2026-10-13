@@ -359,19 +359,40 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
   }
   return { timeSeconds: now, vehicles, completedTrips, totalDelaySeconds };
 }
-export type CalibrationSample = { observedSpeedKmh: number; observedFlowVehPerHour: number; observedQueueMeters: number };
+export type CalibrationSample = {
+  observedSpeedKmh: number;
+  observedFlowVehPerHour: number;
+  observedQueueMeters: number;
+  timestamp: string;
+  location: string;
+  source: string;
+};
 export function parseCalibrationCsv(csv: string): CalibrationSample[] {
   const lines = csv.replace(/^\uFEFF/, '').trim().split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
   const header = lines[0].toLowerCase().split(/[;,]/).map((v) => v.trim());
   const find = (aliases: string[]) => header.findIndex((v) => aliases.includes(v));
+  const timestamp = find(['timestamp', 'datetime', 'date_time', 'дата_время']);
+  const location = find(['location', 'site', 'segment_id', 'место', 'участок']);
+  const source = find(['source', 'source_id', 'источник']);
   const speed = find(['speed_kmh', 'speed', 'скорость', 'скорость_кмч']);
   const flow = find(['flow_veh_per_hour', 'flow', 'поток', 'машин_в_час']);
   const queue = find(['queue_meters', 'queue', 'очередь', 'очередь_метры']);
-  if ([speed, flow, queue].some((v) => v < 0)) return [];
+  if ([timestamp, location, source, speed, flow, queue].some((v) => v < 0)) return [];
+  const parseNumber = (cell: string | undefined) => !cell || !cell.trim() ? NaN : Number(cell.trim().replace(',', '.'));
   return lines.slice(1).map((line) => line.split(';').length > 1 ? line.split(';') : line.split(','))
-    .map((row) => ({ observedSpeedKmh: Number(row[speed]?.trim().replace(',', '.')), observedFlowVehPerHour: Number(row[flow]?.trim().replace(',', '.')), observedQueueMeters: Number(row[queue]?.trim().replace(',', '.')) }))
-    .filter((sample) => Number.isFinite(sample.observedSpeedKmh) && sample.observedSpeedKmh >= 0 && sample.observedSpeedKmh <= 160 && Number.isFinite(sample.observedFlowVehPerHour) && sample.observedFlowVehPerHour >= 0 && sample.observedFlowVehPerHour <= 10000 && Number.isFinite(sample.observedQueueMeters) && sample.observedQueueMeters >= 0 && sample.observedQueueMeters <= 100000);
+    .map((row) => ({
+      timestamp: row[timestamp]?.trim() || '',
+      location: row[location]?.trim() || '',
+      source: row[source]?.trim() || '',
+      observedSpeedKmh: parseNumber(row[speed]),
+      observedFlowVehPerHour: parseNumber(row[flow]),
+      observedQueueMeters: parseNumber(row[queue])
+    }))
+    .filter((sample) => Boolean(sample.timestamp && sample.location && sample.source) &&
+      Number.isFinite(sample.observedSpeedKmh) && sample.observedSpeedKmh >= 0 && sample.observedSpeedKmh <= 160 &&
+      Number.isFinite(sample.observedFlowVehPerHour) && sample.observedFlowVehPerHour >= 0 && sample.observedFlowVehPerHour <= 10000 &&
+      Number.isFinite(sample.observedQueueMeters) && sample.observedQueueMeters >= 0 && sample.observedQueueMeters <= 100000);
 }
 export function calibrateMicroConfig(samples: CalibrationSample[], base: MicroConfig = DEFAULT_MICRO_CONFIG) {
   if (!samples.length) return { config: base, sampleCount: 0, speedSpreadKmh: 0 };
