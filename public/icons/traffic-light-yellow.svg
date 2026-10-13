@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="80" viewBox="0 0 48 80">
+  <defs><filter id="glow" x="-100%" y="-60%" width="300%" height="220%"><feGaussianBlur stdDeviation="4.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <ellipse cx="24" cy="73" rx="10" ry="3" fill="#7b887c" opacity=".16"/>
+  <path d="M24 54v15" stroke="#67766c" stroke-width="4" stroke-linecap="round"/>
+  <rect x="10" y="5" width="28" height="53" rx="8" fill="#eef1e9" stroke="#7c8a7f" stroke-width="1.6"/>
+  <circle cx="24" cy="17" r="6.5" fill="#b5bdb4" stroke="#8c978c" stroke-width="1"/>
+  <circle cx="24" cy="31" r="6.5" fill="#f5c64d" filter="url(#glow)"/>
+  <circle cx="24" cy="45" r="6.5" fill="#b5bdb4" stroke="#8c978c" stroke-width="1"/>
+  <circle cx="24" cy="31" r="3.3" fill="#ffe49a"/>
+</svg>
