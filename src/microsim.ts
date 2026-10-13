@@ -11,7 +11,7 @@ export type Movement = {
 export type SignalPhase = { id: string; name: string; movementIds: string[]; greenSeconds: number; yellowSeconds: number; allRedSeconds: number };
 export type JunctionController = { nodeId: string; cycleOffsetSeconds: number; phases: SignalPhase[]; source?: 'generated' | 'scenario' | 'imported'; forcedState?: SignalColor | null };
 export type MicroVehicle = {
-  id: number; routeEdgeIds: string[]; routeLaneIndices: number[]; routeIndex: number; laneIndex: number;
+  id: number; routeEdgeIds: string[]; routeLaneIndices: number[]; routeIndex: number; tripBoundaryIndex: number; laneIndex: number;
   distanceOnEdge: number; speedMps: number; accelerationMps2: number;
   stoppedSeconds: number; delaySeconds: number; activeMovementId: string | null;
   connectorDistance: number; completedTrips: number;
@@ -233,7 +233,7 @@ export function createMicroState(net: MicroNetwork, config: MicroConfig = DEFAUL
     const initialLane = Math.floor(random() * laneCount(edge));
     const route = findRoute(net, edge, random, initialLane);
     if (!route.edgeIds.length) continue;
-    vehicles.push({ id: i + 1, routeEdgeIds: route.edgeIds, routeLaneIndices: route.laneIndices, routeIndex: 0, laneIndex: route.laneIndices[0],
+    vehicles.push({ id: i + 1, routeEdgeIds: route.edgeIds, routeLaneIndices: route.laneIndices, routeIndex: 0, tripBoundaryIndex: route.edgeIds.length - 1, laneIndex: route.laneIndices[0],
       distanceOnEdge: random() * Math.min(edge.lengthMeters * 0.7, 45), speedMps: random() * 2.5, accelerationMps2: 0,
       stoppedSeconds: 0, delaySeconds: 0, activeMovementId: null, connectorDistance: 0, completedTrips: 0 });
   }
@@ -302,7 +302,13 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
       if (vehicle.speedMps < 0.15) { vehicle.stoppedSeconds += dt; vehicle.delaySeconds += dt; totalDelaySeconds += dt; }
       if (vehicle.connectorDistance >= movement.lengthMeters) {
         vehicle.activeMovementId = null; vehicle.connectorDistance = 0;
+        const previousRouteIndex = vehicle.routeIndex;
         vehicle.routeIndex = Math.min(vehicle.routeIndex + 1, vehicle.routeEdgeIds.length - 1);
+        if (previousRouteIndex === vehicle.tripBoundaryIndex && vehicle.routeIndex > previousRouteIndex) {
+          vehicle.completedTrips++;
+          completedTrips++;
+          vehicle.tripBoundaryIndex = vehicle.routeEdgeIds.length - 1;
+        }
         vehicle.distanceOnEdge = movement.exitDistanceMeters;
         vehicle.laneIndex = clamp(movement.toLane, 0, Math.max(0, laneCount(net.edgesById.get(movement.toEdgeId)!) - 1));
       }
