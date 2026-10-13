@@ -30,7 +30,7 @@ export type MicroNetwork = {
   stats: { movements: number; conflicts: number; controlledJunctions: number; laneConnections: number };
 };
 export const DEFAULT_MICRO_CONFIG: MicroConfig = {
-  vehicleCount: 48, defaultSpeedKmh: 40, desiredHeadwaySeconds: 1.6,
+  vehicleCount: 96, defaultSpeedKmh: 40, desiredHeadwaySeconds: 1.6,
   standstillGapMeters: 2.2, maxAccelerationMps2: 1.7,
   comfortableDecelerationMps2: 2.4, emergencyDecelerationMps2: 6.5,
   reactionTimeSeconds: 0.8, seed: 42
