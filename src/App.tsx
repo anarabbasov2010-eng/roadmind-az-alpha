@@ -506,9 +506,10 @@ export default function App() {
       const query = '[out:json][timeout:25];(' +
         'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|busway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|residential_link|living_street|pedestrian)$"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'node["highway"="traffic_signals"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'relation["type"="restriction"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         ');out body geom;';
       const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-      let payload: { elements?: Array<{ type: string; id: number; tags?: Record<string, string>; geometry?: Array<{ lon: number; lat: number }>; nodes?: number[]; lat?: number; lon?: number }> } | null = null;
+      let payload: { elements?: Array<{ type: string; id: number; tags?: Record<string, string>; geometry?: Array<{ lon: number; lat: number }>; nodes?: number[]; members?: Array<{ type: string; ref: number; role: string }>; lat?: number; lon?: number }> } | null = null;
       let lastError: Error | null = null;
       for (const endpoint of endpoints) {
         try {
@@ -524,6 +525,7 @@ export default function App() {
       if (!payload || !Array.isArray(payload.elements)) throw lastError || new Error('Пустой ответ OpenStreetMap');
       const parsedRoads: OSMRoad[] = [];
       const parsedSignals: OSMSignal[] = [];
+      const parsedRestrictions: Array<{ fromWayId: number; toWayId: number; viaNodeId: string; restriction: string }> = [];
       for (const element of payload.elements) {
         if (element.type === 'way' && element.geometry && element.geometry.length > 1 && element.tags?.highway) {
           parsedRoads.push({
@@ -537,6 +539,12 @@ export default function App() {
             surface: element.tags.surface, width: element.tags.width, access: element.tags.access,
             junction: element.tags.junction, bridge: element.tags.bridge, tunnel: element.tags.tunnel
           });
+        }
+        if (element.type === 'relation' && element.tags?.type === 'restriction' && element.tags.restriction && element.members) {
+          const from = element.members.find((member) => member.role === 'from' && member.type === 'way');
+          const to = element.members.find((member) => member.role === 'to' && member.type === 'way');
+          const via = element.members.find((member) => member.role === 'via' && member.type === 'node');
+          if (from && to && via) parsedRestrictions.push({ fromWayId: from.ref, toWayId: to.ref, viaNodeId: 'n' + via.ref, restriction: element.tags.restriction });
         }
         if (element.type === 'node' && element.tags?.highway === 'traffic_signals' && typeof element.lat === 'number' && Number.isFinite(element.lat) && typeof element.lon === 'number' && Number.isFinite(element.lon)) {
           parsedSignals.push({
@@ -560,7 +568,7 @@ export default function App() {
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
       const network = buildRoadNetwork(roadsCapped);
       const signalNodeIds = new Set(signalsCapped.map((signal) => 'n' + signal.id));
-      const microNetwork = buildMicroNetwork(network, signalNodeIds);
+      const microNetwork = buildMicroNetwork(network, signalNodeIds, parsedRestrictions);
       microConfigRef.current = { ...microConfigRef.current, defaultSpeedKmh: speedLimit };
       const microState = createMicroState(microNetwork, microConfigRef.current);
       microNetworkRef.current = microNetwork;
@@ -600,7 +608,7 @@ export default function App() {
       (map.getSource('rm-road-graph-nodes') as GeoJSONSource | undefined)?.setData(networkNodeCollection(network) as never);
       const signalSource = map.getSource('rm-osm-signals') as GeoJSONSource | undefined;
       signalSource?.setData(importedSignalCollection(signalsCapped) as never);
-      if (!automatic) flashToast('Сеть OSM: ' + network.stats.roads + ' дорог · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос · ' + microNetwork.stats.movements + ' манёвров · ' + microNetwork.stats.conflicts + ' конфликтов · ' + microNetwork.stats.controlledJunctions + ' узлов со светофорами.');
+      if (!automatic) flashToast('Сеть OSM: ' + network.stats.roads + ' дорог · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос · ' + microNetwork.stats.movements + ' манёвров · ' + microNetwork.stats.conflicts + ' конфликтов · ' + microNetwork.stats.controlledJunctions + ' узлов со светофорами · ' + parsedRestrictions.length + ' ограничений поворота.');
     } catch (error) {
       setOsmStatus('error');
       if (!automatic) flashToast('Не удалось обновить OSM. Проверьте интернет или повторите позже.');
