@@ -567,6 +567,12 @@ export default function App() {
     return { network, microNetwork };
   };
 
+  const updateRoadDrafts = (nextDrafts: RoadDraft[]) => {
+    roadsRef.current = nextDrafts;
+    setRoads(nextDrafts);
+    rebuildMicroNetwork(nextDrafts, osmRoadsRef.current, osmSignalsRef.current, turnRestrictionsRef.current);
+  };
+
   const syncOsm = useCallback(async (automatic = false, periodic = false) => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
@@ -787,16 +793,16 @@ export default function App() {
         }
         const first = pendingRoadRef.current;
         pendingRoadRef.current = null;
-        if (Math.hypot((point[0] - first[0]) * 80000, (point[1] - first[1]) * 111000) < 8) {
+        if (Math.hypot((second[0] - first[0]) * 80000, (second[1] - first[1]) * 111000) < 8) {
           flashToast('Участок слишком короткий. Выберите точки подальше друг от друга.');
           return;
         }
-        const road: RoadDraft = { id: 'scenario-road-' + Date.now(), name: 'Новый участок ' + String(roadsRef.current.length + 1), coordinates: [first, point], lanes: 2 };
-        setRoads((previous) => [...previous, road]);
+        const road: RoadDraft = { id: 'scenario-road-' + Date.now(), name: 'Новый участок ' + String(roadsRef.current.length + 1), coordinates: [first, second], lanes: 2 };
+        updateRoadDrafts([...roadsRef.current, road]);
         setSelectedRoadId(road.id);
         setSelectedSignalId(null);
         setMode('select'); modeRef.current = 'select';
-        flashToast('Линия сохранена как черновик. Перед симуляцией её нужно связать с узлами дорожной сети.');
+        flashToast(snappedEnd ? 'Участок добавлен и привязан к дорожному графу.' : 'Участок сохранён. Его конец не привязан к существующему узлу сети.');
         return;
       }
       if (activeMode === 'erase') {
@@ -808,7 +814,7 @@ export default function App() {
           flashToast('Светофор сценария удалён.');
         } else if (hitUserRoads.length) {
           const id = String(hitUserRoads[0].properties?.id || '');
-          setRoads((previous) => previous.filter((road) => road.id !== id));
+          updateRoadDrafts(roadsRef.current.filter((road) => road.id !== id));
           setSelectedRoadId(null);
           flashToast('Участок сценария удалён.');
         } else {
