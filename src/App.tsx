@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
-import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, type RoadInput } from './road-graph';
-import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, signalStateAt, importSignalPlanJson, exportSignalPlanJson, parseCalibrationCsv, calibrateMicroConfig, type MicroNetwork, type MicroState } from './microsim';
+import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, nearestIntersectionNode, type RoadInput } from './road-graph';
+import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, signalStateAt, configureScenarioSignal, ensureJunctionController, importSignalPlanJson, exportSignalPlanJson, parseCalibrationCsv, calibrateMicroConfig, type MicroNetwork, type MicroState } from './microsim';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
@@ -403,6 +403,7 @@ export default function App() {
   const microNetworkRef = useRef<MicroNetwork | null>(null);
   const microStateRef = useRef<MicroState | null>(null);
   const microConfigRef = useRef(DEFAULT_MICRO_CONFIG);
+  const scenarioSignalNodeMapRef = useRef<Map<string, string>>(new Map());
   const signalPlanInputRef = useRef<HTMLInputElement | null>(null);
   const calibrationInputRef = useRef<HTMLInputElement | null>(null);
   const lastSignalRenderSecondRef = useRef(-1);
@@ -607,7 +608,17 @@ export default function App() {
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
       const network = buildRoadNetwork(roadsCapped);
       const signalNodeIds = new Set(signalsCapped.map((signal) => 'n' + signal.id));
+      const scenarioNodeMap = new Map<string, string>();
+      for (const signal of signalsRef.current) {
+        const node = nearestIntersectionNode(network, signal.coordinates, 45);
+        if (node) { scenarioNodeMap.set(signal.id, node.id); signalNodeIds.add(node.id); }
+      }
+      scenarioSignalNodeMapRef.current = scenarioNodeMap;
       const microNetwork = buildMicroNetwork(network, signalNodeIds, parsedRestrictions);
+      for (const signal of signalsRef.current) {
+        const nodeId = scenarioNodeMap.get(signal.id);
+        if (nodeId) configureScenarioSignal(microNetwork, nodeId, signal);
+      }
       microConfigRef.current = { ...microConfigRef.current, defaultSpeedKmh: speedLimit };
       const microState = createMicroState(microNetwork, microConfigRef.current);
       microNetworkRef.current = microNetwork;
@@ -730,6 +741,7 @@ export default function App() {
       if (activeMode === 'signal') {
         const activeRoute = simulationRouteRef.current;
         const progress = progressForCoordinate(activeRoute, point);
+        const nearestNode = microNetworkRef.current ? nearestIntersectionNode(microNetworkRef.current.source, point, 45) : null;
         const connected = distanceToRouteMeters(activeRoute, point) <= 55;
         const signal: ScenarioSignal = {
           id: 'scenario-signal-' + Date.now(),
@@ -737,11 +749,16 @@ export default function App() {
           coordinates: point, progress, cycleSeconds: 80, greenShare: 0.58,
           offsetSeconds: 0, manualState: null, connectedToDemoRoute: connected
         };
+        if (nearestNode && microNetworkRef.current) {
+          scenarioSignalNodeMapRef.current.set(signal.id, nearestNode.id);
+          ensureJunctionController(microNetworkRef.current, nearestNode.id);
+          configureScenarioSignal(microNetworkRef.current, nearestNode.id, signal);
+        }
         setSignals((previous) => [...previous, signal]);
         setSelectedSignalId(signal.id);
         setSelectedRoadId(null);
         setMode('select'); modeRef.current = 'select';
-        flashToast(connected ? 'Светофор связан с тестовым маршрутом.' : 'Светофор создан. Он появится в сценарии, но пока не влияет на тестовый маршрут.');
+        flashToast(nearestNode ? 'Светофор привязан к узлу дорожного графа и управляет его фазами.' : 'Рядом не найден перекрёсток графа: светофор останется визуальным элементом сценария.');
         return;
       }
       if (activeMode === 'road') {
@@ -839,6 +856,10 @@ export default function App() {
       const microNetwork = microNetworkRef.current;
       const currentMicro = microStateRef.current;
       if (microNetwork && currentMicro && currentMicro.vehicles.length) {
+        for (const signal of signalsRef.current) {
+          const nodeId = scenarioSignalNodeMapRef.current.get(signal.id);
+          if (nodeId) configureScenarioSignal(microNetwork, nodeId, signal);
+        }
         const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...microConfigRef.current, defaultSpeedKmh: speedLimit }, 0.1 * speedMultiplier);
         microStateRef.current = nextMicro;
         (mapRef.current?.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, nextMicro) as never);
@@ -912,8 +933,8 @@ export default function App() {
   };
   const toggleManualSignal = () => {
     if (!selectedSignal) return;
-    if (!selectedSignal.connectedToDemoRoute) {
-      flashToast('Светофор не соединён с тестовым маршрутом и не влияет на движение машин.');
+    if (microNetworkRef.current ? !scenarioSignalNodeMapRef.current.has(selectedSignal.id) : !selectedSignal.connectedToDemoRoute) {
+      flashToast('Светофор не привязан к перекрёстку дорожного графа и не влияет на движение машин.');
       return;
     }
     setSignals((previous) => previous.map((signal) => signal.id === selectedSignal.id
