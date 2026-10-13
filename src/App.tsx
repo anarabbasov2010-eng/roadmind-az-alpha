@@ -787,11 +787,14 @@ export default function App() {
       }
       if (activeMode === 'road') {
         if (!pendingRoadRef.current) {
-          pendingRoadRef.current = point;
-          flashToast('Начало выбрано. Щёлкните по карте, чтобы указать конец участка.');
+          const snappedStart = microNetworkRef.current ? nearestRoadNode(microNetworkRef.current.source, point, 20) : null;
+          pendingRoadRef.current = snappedStart?.coordinate || point;
+          flashToast(snappedStart ? 'Начало привязано к узлу сети. Выберите конец участка.' : 'Начало выбрано без привязки. Выберите конец участка.');
           return;
         }
         const first = pendingRoadRef.current;
+        const snappedEnd = microNetworkRef.current ? nearestRoadNode(microNetworkRef.current.source, point, 20) : null;
+        const second = snappedEnd?.coordinate || point;
         pendingRoadRef.current = null;
         if (Math.hypot((second[0] - first[0]) * 80000, (second[1] - first[1]) * 111000) < 8) {
           flashToast('Участок слишком короткий. Выберите точки подальше друг от друга.');
