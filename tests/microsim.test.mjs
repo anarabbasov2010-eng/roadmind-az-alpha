@@ -72,7 +72,7 @@ test('calibration CSV parses observations and adjusts simulation parameters', ()
   assert.equal(result.sampleCount, 2);
   assert.ok(result.config.defaultSpeedKmh > 0);
   assert.ok(result.config.desiredHeadwaySeconds > 0);
-  assert.ok(result.rmseSpeedKmh >= 0);
+  assert.ok(result.speedSpreadKmh >= 0);
 });
 
 test('OSM turn restrictions remove prohibited movements at a via node', () => {
