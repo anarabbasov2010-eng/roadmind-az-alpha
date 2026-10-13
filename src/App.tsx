@@ -1019,7 +1019,7 @@ export default function App() {
   const importCalibration = async (file: File) => {
     const samples = parseCalibrationCsv(await file.text());
     if (!samples.length) {
-      flashToast('CSV не распознан. Нужны столбцы speed_kmh;flow_veh_per_hour;queue_meters.');
+      flashToast('CSV не распознан. Нужны timestamp;location;source;speed_kmh;flow_veh_per_hour;queue_meters и реальные значения.');
       return;
     }
     const result = calibrateMicroConfig(samples, microConfigRef.current);
