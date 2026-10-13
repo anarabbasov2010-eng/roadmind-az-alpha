@@ -325,3 +325,56 @@ export function calibrateMicroConfig(samples: CalibrationSample[], base: MicroCo
   const rmseSpeedKmh = Math.sqrt(samples.reduce((sum, sample) => sum + (sample.observedSpeedKmh - config.defaultSpeedKmh) ** 2, 0) / samples.length);
   return { config, sampleCount: samples.length, rmseSpeedKmh };
 }
+
+export type SignalPlanImportResult = { ok: boolean; updated: number; errors: string[] };
+export function exportSignalPlanJson(net: MicroNetwork): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    source: 'RoadMind AZ signal timing plan',
+    note: 'Replace phase timings with verified controller data. Generated defaults are estimates, not actual field programs.',
+    controllers: Array.from(net.controllers.values()).map((controller) => ({
+      nodeId: controller.nodeId,
+      cycleOffsetSeconds: controller.cycleOffsetSeconds,
+      phases: controller.phases.map((phase) => ({
+        id: phase.id, name: phase.name, greenSeconds: phase.greenSeconds,
+        yellowSeconds: phase.yellowSeconds, allRedSeconds: phase.allRedSeconds,
+        movementIds: phase.movementIds
+      }))
+    }))
+  }, null, 2);
+}
+export function importSignalPlanJson(net: MicroNetwork, input: string): SignalPlanImportResult {
+  const errors: string[] = [];
+  let payload: unknown;
+  try { payload = JSON.parse(input); } catch { return { ok: false, updated: 0, errors: ['Файл не является корректным JSON.'] }; }
+  if (!payload || typeof payload !== 'object' || (payload as { schemaVersion?: unknown }).schemaVersion !== 1 || !Array.isArray((payload as { controllers?: unknown }).controllers)) {
+    return { ok: false, updated: 0, errors: ['Ожидается файл схемы RoadMind signal plan, schemaVersion: 1.'] };
+  }
+  const source = payload as { controllers: Array<{ nodeId?: unknown; cycleOffsetSeconds?: unknown; phases?: unknown }> };
+  const staged: JunctionController[] = [];
+  for (const item of source.controllers) {
+    const nodeId = typeof item.nodeId === 'string' ? item.nodeId : '';
+    const current = net.controllers.get(nodeId);
+    if (!current) { errors.push('Неизвестный узел светофора: ' + (nodeId || '(пусто)')); continue; }
+    if (!Array.isArray(item.phases) || item.phases.length < 1 || item.phases.length > 16) { errors.push(nodeId + ': число фаз должно быть от 1 до 16.'); continue; }
+    const phases: SignalPhase[] = [];
+    const allowed = new Set(net.movements.filter((movement) => movement.nodeId === nodeId).map((movement) => movement.id));
+    for (const raw of item.phases as Array<Record<string, unknown>>) {
+      const movementIds = Array.isArray(raw.movementIds) ? raw.movementIds.filter((id): id is string => typeof id === 'string') : [];
+      const greenSeconds = Number(raw.greenSeconds), yellowSeconds = Number(raw.yellowSeconds), allRedSeconds = Number(raw.allRedSeconds);
+      if (!movementIds.length || movementIds.some((id) => !allowed.has(id))) { errors.push(nodeId + ': фаза содержит пустые или неизвестные движения.'); continue; }
+      if (!Number.isFinite(greenSeconds) || greenSeconds < 5 || greenSeconds > 180 || !Number.isFinite(yellowSeconds) || yellowSeconds < 2 || yellowSeconds > 8 || !Number.isFinite(allRedSeconds) || allRedSeconds < 0 || allRedSeconds > 8) {
+        errors.push(nodeId + ': некорректная длительность фазы.'); continue;
+      }
+      const conflictSet = new Set(movementIds);
+      if (net.movements.some((movement) => movement.nodeId === nodeId && conflictSet.has(movement.id) && movement.conflictIds.some((id) => conflictSet.has(id)))) {
+        errors.push(nodeId + ': в одной фазе есть геометрически конфликтующие манёвры.'); continue;
+      }
+      phases.push({ id: typeof raw.id === 'string' ? raw.id : nodeId + ':imported:' + phases.length, name: typeof raw.name === 'string' ? raw.name : 'Фаза ' + (phases.length + 1), movementIds, greenSeconds, yellowSeconds, allRedSeconds });
+    }
+    if (phases.length === item.phases.length) staged.push({ nodeId, cycleOffsetSeconds: Number.isFinite(Number(item.cycleOffsetSeconds)) ? Number(item.cycleOffsetSeconds) : 0, phases });
+  }
+  if (errors.length) return { ok: false, updated: 0, errors };
+  for (const controller of staged) net.controllers.set(controller.nodeId, controller);
+  return { ok: true, updated: staged.length, errors: [] };
+}
