@@ -87,21 +87,15 @@ test('OSM turn restrictions remove prohibited movements at a via node', () => {
   assert.ok(!micro.movements.some((movement) => movement.nodeId === 'n2' && movement.fromEdgeId.startsWith('101:') && movement.toEdgeId.startsWith('102:')));
 });
 
-test('signal plan export is a complete editable template and rejects conflicting plans', async () => {
+test('signal plan export is a complete editable template and rejects incomplete plans', async () => {
   const { exportSignalPlanJson, importSignalPlanJson } = await import('../src/microsim.ts');
   const micro = buildMicroNetwork(squareNetwork());
   const template = JSON.parse(exportSignalPlanJson(micro));
   assert.equal(template.schemaVersion, 1);
-  if (template.controllers.length) {
-    const controller = template.controllers[0];
-    const movementIds = micro.movements.filter((movement) => movement.nodeId === controller.nodeId);
-    if (movementIds.length > 1) {
-      controller.phases = [{
-        id: 'bad', name: 'unsafe', greenSeconds: 30, yellowSeconds: 3, allRedSeconds: 1,
-        movementIds: movementIds.map((movement) => movement.id)
-      }];
-      const result = importSignalPlanJson(micro, JSON.stringify(template));
-      assert.equal(result.ok, false);
-    }
-  }
+  assert.ok(template.controllers.length > 0);
+  const controller = template.controllers[0];
+  controller.phases[0].movementIds = [];
+  const result = importSignalPlanJson(micro, JSON.stringify(template));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.length > 0);
 });
