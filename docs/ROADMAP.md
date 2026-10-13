@@ -16,7 +16,7 @@
 4. Add vehicle class mix, stochastic driver behavior, lane-changing models and route demand matrices.
 5. Run a reproducible calibration search against multiple observation windows, then validate against held-out data.
 6. Report error metrics for speed, queue length, travel time and throughput with confidence intervals.
-7. Connect editor-created roads to the network only after node snapping, intersection repair and topology validation are implemented.
+7. Extend road editing beyond endpoint snapping: project onto road segments, split ways safely, repair junction topology and validate the result before simulation.
 
 ## Scale and deployment
 - Consider a mature microscopic simulator integration such as SUMO for larger networks and more established car-following/lane-changing models.
