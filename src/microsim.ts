@@ -36,7 +36,6 @@ export const DEFAULT_MICRO_CONFIG: MicroConfig = {
 const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 const edgeLen = (e: NetworkEdge) => Math.max(0.1, e.lengthMeters);
-const pair = (a: string, b: string) => a + '>' + b;
 function distance(a: Position, b: Position): number {
   const lat = (a[1] + b[1]) * 0.5 * RAD;
   return Math.hypot((b[0] - a[0]) * 111320 * Math.cos(lat), (b[1] - a[1]) * 110540);
