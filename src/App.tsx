@@ -515,8 +515,8 @@ export default function App() {
           });
         }
       }
-      const roadsCapped = parsedRoads.slice(0, 2200);
-      const signalsCapped = parsedSignals.slice(0, 900);
+      const roadsCapped = parsedRoads.slice(0, 6000);
+      const signalsCapped = parsedSignals.slice(0, 2000);
       setOsmRoads(roadsCapped);
       setOsmSignals(signalsCapped);
       setOsmUpdatedAt(new Date());
