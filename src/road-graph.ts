@@ -271,3 +271,13 @@ export function buildClosedSimulationRoute(network: RoadNetwork): Position[] | n
   }
   return best;
 }
+
+export function nearestIntersectionNode(network: RoadNetwork, point: Position, maxDistanceMeters = 45): NetworkNode | null {
+  let nearest: NetworkNode | null = null;
+  let nearestDistance = maxDistanceMeters;
+  for (const node of network.intersections) {
+    const distance = distanceMeters(node.coordinate, point);
+    if (distance <= nearestDistance) { nearest = node; nearestDistance = distance; }
+  }
+  return nearest;
+}
