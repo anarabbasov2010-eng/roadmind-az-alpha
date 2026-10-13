@@ -58,7 +58,7 @@ function signalCollection(signals: ScenarioSignal[], time: number, network?: Mic
     features: signals.map((signal) => {
       const nodeId = nodeMap?.get(signal.id);
       const controller = nodeId ? network?.controllers.get(nodeId) : undefined;
-      const movement = controller ? network?.movements.find((item) => item.nodeId === controller.nodeId) : undefined;
+      const movement = controller ? network?.movementsByNode.get(controller.nodeId)?.[0] : undefined;
       const state = controller && movement ? signalStateAt(controller, microTime, movement.id) : isSignalRed(signal, time) ? 'red' : 'green';
       return {
         type: 'Feature', id: signal.id,
