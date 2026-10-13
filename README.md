@@ -9,7 +9,8 @@ RoadMind is being built toward one long-term goal: a geographically complete dig
 - Desktop workspace built with React, TypeScript, MapLibre GL JS and Electron.
 - Online dark basemap based on OpenStreetMap, smooth zoom around the center, bounded camera, 2D/3D tilt and a Baku/Country navigation preset.
 - Available 3D building geometry from OpenFreeMap vector tiles.
-- On-demand OpenStreetMap import for road geometries and mapped traffic-signal nodes around the current map area.
+- On-demand OpenStreetMap import for road geometry, mapped traffic-signal nodes, OSM node references, speed/one-way/lane tags and road attributes in the current map area.
+- Directed road-segment graph built from shared OSM node IDs, junction-degree detection, connected-component counts, and per-lane geometry overlays. Lane counts use OSM tags where available and documented class defaults otherwise; defaults are estimates, not survey measurements.
 - Scenario-only editor to place traffic lights and draw draft road segments; imported OSM reference geometry is read-only.
 - A small synthetic demo route with virtual vehicles, configurable demo signal cycles, model-speed setting, local scenario save and JSON export.
 - Reproducible baseline-versus-scenario demo comparison, clear provenance labels, tests and a Windows installer workflow.
@@ -52,6 +53,13 @@ The product interface marks these limitations deliberately. Do not use Alpha met
 ## Attribution
 
 Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), licensed under the Open Database License (ODbL). Online vector tiles are hosted by [OpenFreeMap](https://openfreemap.org/). Keep attribution and review current provider terms when redistributing.
+
+## Road graph notes
+
+- Shared OSM way-node IDs are used as topological identity where supplied; coordinate quantization is a fallback for incomplete geometry responses.
+- Each road geometry is split into directed segment edges. `oneway`, `lanes`, and `maxspeed` tags affect edge direction, lane counts and default speeds.
+- Intersection markers identify nodes with at least three unique neighbouring nodes. Complex junctions still require explicit turn connectors and lane-level conflict modelling.
+- Lane-center overlays are derived from lane counts and nominal 3.25 m lane width. Roads with absent or inconsistent OSM lane metadata remain approximate.
 
 ## Development roadmap
 
