@@ -93,7 +93,7 @@ function carsCollection(state: TrafficState, route: Position[] = DEMO_ROUTE): Fe
       const bearing = Math.atan2(next[0] - point[0], next[1] - point[1]) * 180 / Math.PI;
       return {
         type: 'Feature', id: vehicle.id, geometry: { type: 'Point', coordinates: point },
-        properties: { id: vehicle.id, bearing, stopped: vehicle.stopped, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
+        properties: { id: vehicle.id, bearing, speedKmh: Math.max(0, Math.round(vehicle.speedKmh)), stopped: vehicle.stopped, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
       };
     })
   };
@@ -415,6 +415,20 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     id: 'rm-vehicles-layer', type: 'symbol', source: 'rm-vehicles',
     layout: { 'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.35, 15, 0.65, 19, 0.95], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
     paint: { 'icon-opacity': ['case', ['get', 'stopped'], 0.74, 1] }
+  });
+  map.addLayer({
+    id: 'rm-vehicle-speed-labels', type: 'symbol', source: 'rm-vehicles', minzoom: 14,
+    layout: {
+      'text-field': ['concat', ['to-string', ['get', 'speedKmh']], ' km/h'],
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 14, 8, 17, 10, 20, 12],
+      'text-anchor': 'bottom', 'text-offset': [0, 1.65],
+      'text-allow-overlap': true, 'text-ignore-placement': true
+    },
+    paint: {
+      'text-color': ['case', ['get', 'stopped'], '#b43d35', '#233c2d'],
+      'text-halo-color': '#ffffff', 'text-halo-width': 1.8, 'text-halo-blur': 0.35
+    }
   });
 
 }
