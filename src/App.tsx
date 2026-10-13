@@ -29,8 +29,6 @@ type TrafficMetrics = { averageSpeed: number; stopped: number; queueMeters: numb
 
 const STORAGE_KEY = 'roadmind-az-scenario-v2';
 const BAKU: Position = [49.8672, 40.3893];
-const RED = '#d94c45';
-const GREEN = '#21865f';
 
 function initialSignals(): ScenarioSignal[] {
   const point = pointAtProgress(DEMO_ROUTE, 0.275);
@@ -148,6 +146,15 @@ function metricsFor(state: TrafficState): TrafficMetrics {
     delaySeconds: Math.round(state.totalWaitSeconds / count),
     throughput: Math.round(state.completedTrips / hours)
   };
+}
+
+function loadSvgImage(relativePath: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Не удалось загрузить SVG: ' + relativePath));
+    image.src = new URL(relativePath, window.location.href).toString();
+  });
 }
 
 function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void> {
