@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
-import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, nearestIntersectionNode, type RoadInput } from './road-graph';
-import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, signalStateAt, configureScenarioSignal, ensureJunctionController, resetScenarioController, importSignalPlanJson, exportSignalPlanJson, parseCalibrationCsv, calibrateMicroConfig, type MicroNetwork, type MicroState } from './microsim';
+import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, nearestIntersectionNode, nearestRoadNode, type RoadInput } from './road-graph';
+import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, signalStateAt, configureScenarioSignal, ensureJunctionController, resetScenarioController, importSignalPlanJson, exportSignalPlanJson, parseCalibrationCsv, calibrateMicroConfig, type MicroNetwork, type MicroState, type TurnRestriction } from './microsim';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
@@ -408,6 +408,9 @@ export default function App() {
   const microNetworkRef = useRef<MicroNetwork | null>(null);
   const microStateRef = useRef<MicroState | null>(null);
   const microConfigRef = useRef(DEFAULT_MICRO_CONFIG);
+  const osmRoadsRef = useRef<OSMRoad[]>([]);
+  const osmSignalsRef = useRef<OSMSignal[]>([]);
+  const turnRestrictionsRef = useRef<TurnRestriction[]>([]);
   const scenarioSignalNodeMapRef = useRef<Map<string, string>>(new Map());
   const signalPlanInputRef = useRef<HTMLInputElement | null>(null);
   const calibrationInputRef = useRef<HTMLInputElement | null>(null);
@@ -507,6 +510,62 @@ export default function App() {
     }, 30 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const rebuildMicroNetwork = (drafts: RoadDraft[], sourceRoads: OSMRoad[], sourceSignals: OSMSignal[], restrictions: TurnRestriction[]) => {
+    if (!sourceRoads.length) return null;
+    const baseNetwork = buildRoadNetwork(sourceRoads);
+    const draftInputs: OSMRoad[] = drafts.map((draft, index) => ({
+      id: -(Math.abs(Number(draft.id.replace(/\\D/g, '')) || index + 1)),
+      name: draft.name,
+      highway: 'residential',
+      coordinates: draft.coordinates,
+      nodeRefs: draft.coordinates.map((point) => {
+        const node = nearestRoadNode(baseNetwork, point, 1.5);
+        return node?.id.startsWith('n') ? Number(node.id.slice(1)) : undefined;
+      }),
+      lanes: String(draft.lanes),
+      oneway: 'no'
+    }));
+    const network = buildRoadNetwork([...sourceRoads, ...draftInputs]);
+    const signalNodeIds = new Set(sourceSignals.map((signal) => 'n' + signal.id));
+    const scenarioNodeMap = new Map<string, string>();
+    for (const signal of signalsRef.current) {
+      const node = nearestIntersectionNode(network, signal.coordinates, 45);
+      if (node) { scenarioNodeMap.set(signal.id, node.id); signalNodeIds.add(node.id); }
+    }
+    scenarioSignalNodeMapRef.current = scenarioNodeMap;
+    const microNetwork = buildMicroNetwork(network, signalNodeIds, restrictions);
+    for (const signal of signalsRef.current) {
+      const nodeId = scenarioNodeMap.get(signal.id);
+      if (nodeId) configureScenarioSignal(microNetwork, nodeId, signal);
+    }
+    microConfigRef.current = { ...microConfigRef.current, defaultSpeedKmh: speedLimit };
+    const microState = createMicroState(microNetwork, microConfigRef.current);
+    microNetworkRef.current = microNetwork;
+    microStateRef.current = microState;
+    const route = buildClosedSimulationRoute(network);
+    simulationRouteRef.current = route && route.length >= 4 ? route : DEMO_ROUTE;
+    simulationRouteLengthKmRef.current = route && route.length >= 4 ? Math.max(0.05, routeLengthMeters(route) / 1000) : 2.6;
+    const updatedSignals = signalsRef.current.map((signal) => ({
+      ...signal,
+      progress: progressForCoordinate(simulationRouteRef.current, signal.coordinates),
+      connectedToDemoRoute: distanceToRouteMeters(simulationRouteRef.current, signal.coordinates) <= 55
+    }));
+    signalsRef.current = updatedSignals;
+    setSignals(updatedSignals);
+    const map = mapRef.current;
+    if (map?.isStyleLoaded()) {
+      (map.getSource('rm-road-graph-lanes') as GeoJSONSource | undefined)?.setData(laneLineCollection(network) as never);
+      (map.getSource('rm-road-graph-nodes') as GeoJSONSource | undefined)?.setData(networkNodeCollection(network) as never);
+      (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, microState) as never);
+      (map.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(sourceSignals, microNetwork, microState.timeSeconds) as never);
+      (map.getSource('rm-simulation-route') as GeoJSONSource | undefined)?.setData(route && route.length >= 4 ? {
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: route }, properties: { kind: 'imported-street-cycle', lengthKm: simulationRouteLengthKmRef.current } }]
+      } as never : emptyCollection() as never);
+    }
+    return { network, microNetwork };
+  };
 
   const syncOsm = useCallback(async (automatic = false, periodic = false) => {
     const map = mapRef.current;
