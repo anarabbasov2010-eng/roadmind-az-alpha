@@ -5,7 +5,7 @@ export type TurnKind = 'left' | 'through' | 'right';
 export type SignalColor = 'red' | 'yellow' | 'green';
 export type Movement = {
   id: string; nodeId: string; fromEdgeId: string; toEdgeId: string;
-  kind: TurnKind; fromLane: number; toLane: number;
+  kind: TurnKind; fromLane: number; toLane: number; turnSpeedKmh: number;
   geometry: Position[]; lengthMeters: number; exitDistanceMeters: number; conflictIds: string[];
 };
 export type SignalPhase = { id: string; name: string; movementIds: string[]; greenSeconds: number; yellowSeconds: number; allRedSeconds: number };
@@ -132,6 +132,7 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
         movements.push({
           id: nodeId + ':' + from.id + ':' + to.id + ':' + fromLane, nodeId,
           fromEdgeId: from.id, toEdgeId: to.id, kind, fromLane, toLane,
+          turnSpeedKmh: kind === 'left' ? 18 : kind === 'right' ? 14 : 32,
           geometry: curve.geometry, lengthMeters: Math.max(2, lengthMeters),
           exitDistanceMeters: curve.exitDistanceMeters, conflictIds: []
         });
@@ -287,7 +288,12 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     if (vehicle.activeMovementId) {
       const movement = net.movements.find((item) => item.id === vehicle.activeMovementId);
       if (!movement) { vehicle.activeMovementId = null; vehicle.connectorDistance = 0; continue; }
+      const targetTurnSpeed = movement.turnSpeedKmh / 3.6;
+      const turnAcceleration = clamp((targetTurnSpeed - vehicle.speedMps) / dt, -config.emergencyDecelerationMps2, config.maxAccelerationMps2);
+      vehicle.speedMps = Math.max(0, vehicle.speedMps + turnAcceleration * dt);
+      vehicle.accelerationMps2 = turnAcceleration;
       vehicle.connectorDistance += vehicle.speedMps * dt;
+      if (vehicle.speedMps < 0.15) { vehicle.stoppedSeconds += dt; vehicle.delaySeconds += dt; totalDelaySeconds += dt; }
       if (vehicle.connectorDistance >= movement.lengthMeters) {
         vehicle.activeMovementId = null; vehicle.connectorDistance = 0;
         vehicle.routeIndex = Math.min(vehicle.routeIndex + 1, vehicle.routeEdgeIds.length - 1);
@@ -319,9 +325,16 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     const conflictBusy = movement?.conflictIds.some((id) => occupiedMovements.has(id)) || false;
     const isLast = vehicle.routeIndex >= vehicle.routeEdgeIds.length - 1;
     let targetSpeed = Math.min(config.defaultSpeedKmh, edge.speedKmh || config.defaultSpeedKmh) / 3.6;
-    if (isLast) targetSpeed = Math.min(targetSpeed, Math.sqrt(Math.max(0, 2 * config.comfortableDecelerationMps2 * Math.max(0, remaining - 1))));
-    else if (!movement || light !== 'green' || conflictBusy) {
-      targetSpeed = Math.min(targetSpeed, Math.sqrt(Math.max(0, 2 * config.comfortableDecelerationMps2 * Math.max(0, remaining - 1.8))));
+    if (isLast) {
+      targetSpeed = Math.min(targetSpeed, Math.sqrt(Math.max(0, 2 * config.comfortableDecelerationMps2 * Math.max(0, remaining - 1))));
+    } else if (!movement) {
+      targetSpeed = 0;
+    } else {
+      const turnSpeed = movement.turnSpeedKmh / 3.6;
+      targetSpeed = Math.min(targetSpeed, Math.sqrt(turnSpeed * turnSpeed + 2 * config.comfortableDecelerationMps2 * Math.max(0, remaining - 0.6)));
+      if (light !== 'green' || conflictBusy) {
+        targetSpeed = Math.min(targetSpeed, Math.sqrt(Math.max(0, 2 * config.comfortableDecelerationMps2 * Math.max(0, remaining - 1.8))));
+      }
     }
     const leaders = occupancy.get(edge.id + ':' + vehicle.laneIndex) || [];
     const leaderIndex = leaders.findIndex((candidate) => candidate.id === vehicle.id);
