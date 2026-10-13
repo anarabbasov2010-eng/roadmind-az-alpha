@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
 import {
-  Activity, AlertTriangle, ArrowLeft, ArrowRight, Building2, CarFront, Check,
-  ChevronDown, CircleHelp, Clock3, Compass, Download, Eraser, Eye, Gauge,
-  GitCompareArrows, Layers3, LocateFixed, Map as MapIcon, Minus, Pause, Play,
-  Plus, RadioTower, RefreshCw, RotateCcw, Save, Search, Settings2, TrafficCone,
-  Waypoints, X, ZoomIn, ZoomOut
+  Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
+  Clock3, Compass, Download, Eraser, Eye, Gauge, GitCompareArrows, LocateFixed,
+  Map as MapIcon, Pause, Play, Plus, RadioTower, RefreshCw, RotateCcw, Save,
+  Settings2, TrafficCone, Waypoints, X, ZoomIn, ZoomOut
 } from 'lucide-react';
 import {
   advanceTraffic, createTrafficState, DEMO_ROUTE, distanceToRouteMeters, isSignalRed,
@@ -30,7 +29,6 @@ type TrafficMetrics = { averageSpeed: number; stopped: number; queueMeters: numb
 const STORAGE_KEY = 'roadmind-az-scenario-v2';
 const BAKU: Position = [49.8672, 40.3893];
 const AZERBAIJAN: Position = [47.58, 40.42];
-const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const RED = '#e66d64';
 const GREEN = '#5fc2a9';
 
@@ -339,7 +337,7 @@ export default function App() {
             lanes: element.tags.lanes, maxspeed: element.tags.maxspeed, oneway: element.tags.oneway
           });
         }
-        if (element.type === 'node' && element.tags?.highway === 'traffic_signals' && Number.isFinite(element.lat) && Number.isFinite(element.lon)) {
+        if (element.type === 'node' && element.tags?.highway === 'traffic_signals' && typeof element.lat === 'number' && Number.isFinite(element.lat) && typeof element.lon === 'number' && Number.isFinite(element.lon)) {
           parsedSignals.push({
             id: element.id, name: element.tags.name || 'Светофор из OSM',
             coordinates: [element.lon as number, element.lat as number] as Position,
@@ -391,6 +389,7 @@ export default function App() {
       canvasContextAttributes: { antialias: false, powerPreference: 'high-performance' }
     });
     mapRef.current = map;
+    map.scrollZoom.enable({ around: 'center' });
     map.scrollZoom.setWheelZoomRate(1 / 650);
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
@@ -786,6 +785,6 @@ function chartPath(history: number[]): string {
 function Metric({ label, value, unit }: { label: string; value: number; unit: string }) {
   return <div className="metric-mini"><small>{label}</small><strong>{value}<em>{unit}</em></strong></div>;
 }
-function LayerToggle({ icon, label, detail, checked, onChange }: { icon: React.ReactNode; label: string; detail: string; checked: boolean; onChange: (value: boolean) => void }) {
+function LayerToggle({ icon, label, detail, checked, onChange }: { icon: ReactNode; label: string; detail: string; checked: boolean; onChange: (value: boolean) => void }) {
   return <div className="layer-row"><span className="layer-icon">{icon}</span><div className="layer-copy"><strong>{label}</strong><small>{detail}</small></div><button className={'toggle-switch ' + (checked ? 'on' : '')} role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}><span /></button></div>;
 }
