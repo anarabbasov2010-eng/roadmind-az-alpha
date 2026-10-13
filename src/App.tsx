@@ -371,6 +371,8 @@ export default function App() {
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>((stored.signals || initialSignals())[0]?.id || null);
   const [selectedRoadId, setSelectedRoadId] = useState<string | null>(null);
   const [is3D, setIs3D] = useState(true);
+  const [cameraPitch, setCameraPitch] = useState(44);
+  const [cameraBearing, setCameraBearing] = useState(-6);
   const [isRunning, setIsRunning] = useState(true);
   const [speedMultiplier, setSpeedMultiplier] = useState(1);
   const [speedLimit, setSpeedLimit] = useState(40);
@@ -738,16 +740,30 @@ export default function App() {
   }, []);
 
   const zoomBaku = useCallback(() => {
-    mapRef.current?.flyTo({ center: BAKU, zoom: 14.25, pitch: is3D ? 44 : 0, bearing: -6, duration: 900, speed: 1.15, essential: true });
-  }, [is3D]);
+    mapRef.current?.flyTo({ center: BAKU, zoom: 14.25, pitch: is3D ? cameraPitch : 0, bearing: cameraBearing, duration: 900, speed: 1.15, essential: true });
+  }, [is3D, cameraPitch, cameraBearing]);
   const zoomCountry = useCallback(() => {
     setIs3D(false);
     mapRef.current?.fitBounds([[44.75, 38.38], [50.62, 41.90]], { padding: 52, duration: 1000, maxZoom: 6.4, essential: true });
   }, []);
   const toggle3D = useCallback((enabled: boolean) => {
     setIs3D(enabled);
-    mapRef.current?.easeTo({ pitch: enabled ? 44 : 0, bearing: -6, duration: 520, essential: true });
-  }, []);
+    const pitch = enabled ? Math.max(32, cameraPitch) : 0;
+    setCameraPitch(pitch);
+    mapRef.current?.easeTo({ pitch, bearing: cameraBearing, duration: 520, essential: true });
+  }, [cameraPitch, cameraBearing]);
+
+  const changeCameraPitch = (value: number) => {
+    const pitch = Math.max(0, Math.min(58, value));
+    setCameraPitch(pitch);
+    setIs3D(pitch > 0);
+    mapRef.current?.easeTo({ pitch, duration: 160, essential: true });
+  };
+  const changeCameraBearing = (value: number) => {
+    const bearing = Math.max(-180, Math.min(180, value));
+    setCameraBearing(bearing);
+    mapRef.current?.easeTo({ bearing, duration: 120, essential: true });
+  };
 
   const changeMode = (next: ToolMode) => {
     pendingRoadRef.current = null;
@@ -879,9 +895,14 @@ export default function App() {
             <button className={!is3D ? 'active' : ''} onClick={() => toggle3D(false)}>2D</button>
             <button className={is3D ? 'active' : ''} onClick={() => toggle3D(true)}>3D</button>
             <span />
-            <button title="Вернуть на север" onClick={() => mapRef.current?.easeTo({ bearing: 0, duration: 350 })}><Compass size={15} /></button>
+            <button title="Вернуть на север" onClick={() => { setCameraBearing(0); mapRef.current?.easeTo({ bearing: 0, duration: 350 }); }}><Compass size={15} /></button>
           </div>
 
+          <div className="camera-dock" aria-label="Управление камерой">
+            <div className="camera-dock-title"><Compass size={13} /> Камера <span>{cameraPitch}° / {Math.round(cameraBearing)}°</span></div>
+            <label><span>Наклон</span><input aria-label="Наклон камеры" type="range" min="0" max="58" step="1" value={cameraPitch} onChange={(event) => changeCameraPitch(Number(event.target.value))} /></label>
+            <label><span>Поворот</span><input aria-label="Поворот камеры" type="range" min="-180" max="180" step="1" value={cameraBearing} onChange={(event) => changeCameraBearing(Number(event.target.value))} /></label>
+          </div>
           <div className="map-legend"><span><i className="legend-road" />Дороги</span><span><i className="legend-car" />Автомобили</span><span><i className="legend-signal" />Светофоры</span></div>
           <div className="map-bottom-left"><span className={'status-dot ' + mapStatus} />{mapStatus === 'ready' ? 'Карта онлайн' : mapStatus === 'error' ? 'Карта недоступна' : 'Загрузка карты'}</div>
           <div className="map-bottom-controls">
