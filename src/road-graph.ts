@@ -35,6 +35,7 @@ export type NetworkEdge = {
   roadId: number;
   roadName: string;
   roadClass: string;
+  turnLanes?: string;
   direction: 1 | -1;
   lanes: number;
   speedKmh: number;
@@ -149,8 +150,8 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
       const edgeId = road.id + ':' + i;
       const forwardOffset = reverseLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0;
       const backwardOffset = forwardLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0;
-      if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay, carriagewayOffsetMeters: forwardOffset });
-      if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay, carriagewayOffsetMeters: backwardOffset });
+      if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, turnLanes: road.turnLanesForward, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay, carriagewayOffsetMeters: forwardOffset });
+      if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, turnLanes: road.turnLanesBackward, direction: -1, lanes: reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay, carriagewayOffsetMeters: backwardOffset });
     }
     // Draw each lane center independently, offsetting opposing carriageways to their proper sides.
     const addLaneLines = (line: Position[], count: number, baseOffset: number, direction: 1 | -1, laneStart: number) => {
