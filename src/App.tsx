@@ -1024,7 +1024,7 @@ export default function App() {
     const result = calibrateMicroConfig(samples, microConfigRef.current);
     microConfigRef.current = result.config;
     setSpeedLimit(Math.round(result.config.defaultSpeedKmh));
-    flashToast('Калибровка по ' + result.sampleCount + ' измерениям применена. RMSE скорости: ' + result.rmseSpeedKmh.toFixed(1) + ' км/ч.');
+    flashToast('Калибровка по ' + result.sampleCount + ' измерениям применена. разброс измеренной скорости: ' + result.speedSpreadKmh.toFixed(1) + ' км/ч.');
   };
 
   const runComparison = () => {
