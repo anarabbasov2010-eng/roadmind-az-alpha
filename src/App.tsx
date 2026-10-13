@@ -177,13 +177,33 @@ function importedSignalCollection(signals: OSMSignal[], network?: MicroNetwork |
 
 function microMetricsFor(state: MicroState): TrafficMetrics {
   const count = Math.max(1, state.vehicles.length);
-  const stopped = state.vehicles.filter((vehicle) => vehicle.speedMps < 0.15).length;
+  const stoppedVehicles = state.vehicles.filter((vehicle) => vehicle.speedMps < 0.15);
   const averageSpeed = state.vehicles.reduce((total, vehicle) => total + vehicle.speedMps * 3.6, 0) / count;
+  const queues = new Map<string, MicroState['vehicles']>();
+  for (const vehicle of stoppedVehicles) {
+    if (vehicle.activeMovementId) continue;
+    const key = vehicle.routeEdgeIds[vehicle.routeIndex] + ':' + vehicle.laneIndex;
+    queues.set(key, [...(queues.get(key) || []), vehicle]);
+  }
+  let queueMeters = 0;
+  for (const queue of queues.values()) {
+    queue.sort((a, b) => a.distanceOnEdge - b.distanceOnEdge);
+    let first = queue[0], previous = queue[0];
+    for (let index = 1; index < queue.length; index++) {
+      const vehicle = queue[index];
+      if (vehicle.distanceOnEdge - previous.distanceOnEdge > 12) {
+        queueMeters += previous.distanceOnEdge - first.distanceOnEdge + 4.8;
+        first = vehicle;
+      }
+      previous = vehicle;
+    }
+    if (queue.length) queueMeters += previous.distanceOnEdge - first.distanceOnEdge + 4.8;
+  }
   const hours = Math.max(1 / 3600, state.timeSeconds / 3600);
   return {
     averageSpeed: Math.round(averageSpeed),
-    stopped,
-    queueMeters: Math.round(stopped * 6.5),
+    stopped: stoppedVehicles.length,
+    queueMeters: Math.round(queueMeters),
     delaySeconds: Math.round(state.vehicles.reduce((total, vehicle) => total + vehicle.delaySeconds, 0) / count),
     throughput: Math.round(state.completedTrips / hours)
   };
