@@ -75,7 +75,7 @@ function conflicts(a: Position[], b: Position[]): boolean {
 }
 function laneCount(edge: NetworkEdge): number { return clamp(Math.floor(edge.lanes || 1), 1, 8); }
 
-export function buildMicroNetwork(network: RoadNetwork): MicroNetwork {
+export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<string>): MicroNetwork {
   const incoming = new Map<string, NetworkEdge[]>(), outgoing = new Map<string, NetworkEdge[]>();
   const edgesById = new Map(network.edges.map((edge) => [edge.id, edge]));
   for (const edge of network.edges) {
@@ -116,7 +116,7 @@ export function buildMicroNetwork(network: RoadNetwork): MicroNetwork {
   for (const movement of movements) movementsByIncomingEdge.set(movement.fromEdgeId, [...(movementsByIncomingEdge.get(movement.fromEdgeId) || []), movement]);
   const controllers = new Map<string, JunctionController>();
   for (const [nodeId, atNode] of movementsAtNode) {
-    if (!atNode.length) continue;
+    if (!atNode.length || (signalNodeIds && !signalNodeIds.has(nodeId))) continue;
     // Greedy conflict-graph colouring produces phases that never intentionally green-light a geometric conflict pair.
     const colors: Movement[][] = [];
     for (const movement of atNode) {
@@ -236,7 +236,7 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     occupancy.set(key, [...(occupancy.get(key) || []), vehicle]);
   }
   for (const list of occupancy.values()) list.sort((a, b) => b.distanceOnEdge - a.distanceOnEdge);
-  const occupiedMovements = new Set<string>();
+  const occupiedMovements = new Set<string>(vehicles.map((vehicle) => vehicle.activeMovementId).filter((id): id is string => Boolean(id)));
   let completedTrips = state.completedTrips, totalDelaySeconds = state.totalDelaySeconds;
   for (let index = 0; index < vehicles.length; index++) {
     const vehicle = vehicles[index];
