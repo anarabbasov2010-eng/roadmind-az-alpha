@@ -135,7 +135,6 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
     const refs = road.nodeRefs && road.nodeRefs.length === coords.length ? road.nodeRefs : [];
     const ids = coords.map((point, i) => keyFor(point, refs[i]));
     ids.forEach((id, i) => addNode(id, coords[i], road.id));
-    const lanes = laneCount(road);
     const directional = directionalLaneCounts(road);
     const oneWay = isOneway(road);
     const reverseOnly = (road.oneway || '').toLowerCase() === '-1';
