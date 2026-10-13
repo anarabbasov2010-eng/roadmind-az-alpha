@@ -77,24 +77,6 @@ function roadCollection(roads: RoadDraft[]): FeatureCollection {
   };
 }
 
-function carIcon(color: string): ImageData {
-  const canvas = document.createElement('canvas');
-  canvas.width = 48; canvas.height = 28;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return new ImageData(48, 28);
-  ctx.fillStyle = '#101716';
-  ctx.beginPath(); ctx.roundRect(5, 2, 38, 24, 7); ctx.fill();
-  ctx.fillStyle = color;
-  ctx.beginPath(); ctx.roundRect(8, 1, 32, 25, 6); ctx.fill();
-  ctx.fillStyle = '#e1efea';
-  ctx.beginPath(); ctx.roundRect(13, 5, 22, 6, 2); ctx.fill();
-  ctx.fillStyle = '#9bbdb5';
-  ctx.beginPath(); ctx.roundRect(13, 16, 22, 5, 2); ctx.fill();
-  ctx.fillStyle = '#13201e';
-  ctx.fillRect(4, 6, 5, 5); ctx.fillRect(39, 6, 5, 5); ctx.fillRect(4, 18, 5, 5); ctx.fillRect(39, 18, 5, 5);
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
-}
-
 function carsCollection(state: TrafficState): FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -214,14 +196,18 @@ function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void
 }
 
 async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void> {
-  const [redSignal, greenSignal, referenceSignal] = await Promise.all([
+  const [redSignal, greenSignal, referenceSignal, carSage, carAmber] = await Promise.all([
     loadSvgImage('./icons/traffic-light-red.svg'),
     loadSvgImage('./icons/traffic-light-green.svg'),
-    loadSvgImage('./icons/traffic-light-reference.svg')
+    loadSvgImage('./icons/traffic-light-reference.svg'),
+    loadSvgImage('./icons/car-sage.svg'),
+    loadSvgImage('./icons/car-amber.svg')
   ]);
   map.addImage('rm-signal-red', redSignal, { pixelRatio: 2 });
   map.addImage('rm-signal-green', greenSignal, { pixelRatio: 2 });
   map.addImage('rm-signal-reference', referenceSignal, { pixelRatio: 2 });
+  map.addImage('rm-car', carSage, { pixelRatio: 2 });
+  map.addImage('rm-car-amber', carAmber, { pixelRatio: 2 });
   const labelLayer = map.getStyle().layers?.find((layer) =>
     layer.type === 'symbol' && Boolean(layer.layout && 'text-field' in layer.layout)
   )?.id;
@@ -231,11 +217,11 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   }
   if (!map.getLayer('rm-3d-buildings')) {
     map.addLayer({
-      id: 'rm-3d-buildings', type: 'fill-extrusion', source: 'rm-buildings', 'source-layer': 'building', minzoom: 14,
+      id: 'rm-3d-buildings', type: 'fill-extrusion', source: 'rm-buildings', 'source-layer': 'building', minzoom: 13,
       filter: ['!=', ['get', 'hide_3d'], true],
       paint: {
         'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 9], 0, '#e3e4dc', 18, '#d2d8cf', 55, '#c5d0c5', 140, '#b5c3b7'],
-        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13.8, 0, 15, ['coalesce', ['get', 'render_height'], ['get', 'height'], 9]],
+        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.8, 0, 14.25, ['coalesce', ['get', 'render_height'], ['get', 'height'], 9]],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
         'fill-extrusion-opacity': 0.94,
         'fill-extrusion-vertical-gradient': true
@@ -334,8 +320,6 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   });
 
   map.addSource('rm-vehicles', { type: 'geojson', data: carsCollection(createTrafficState()) as never });
-  map.addImage('rm-car', carIcon('#63bdae'), { pixelRatio: 2 });
-  map.addImage('rm-car-amber', carIcon('#dbb47a'), { pixelRatio: 2 });
   map.addLayer({
     id: 'rm-vehicles-layer', type: 'symbol', source: 'rm-vehicles',
     layout: { 'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.35, 15, 0.65, 19, 0.95], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
@@ -538,7 +522,7 @@ export default function App() {
       container,
       style: 'https://tiles.openfreemap.org/styles/bright',
       center: BAKU,
-      zoom: 13.9,
+      zoom: 14.25,
       pitch: 44,
       bearing: -6,
       minZoom: 5,
@@ -724,7 +708,7 @@ export default function App() {
   }, []);
 
   const zoomBaku = useCallback(() => {
-    mapRef.current?.flyTo({ center: BAKU, zoom: 14.2, pitch: is3D ? 44 : 0, bearing: -6, duration: 900, speed: 1.15, essential: true });
+    mapRef.current?.flyTo({ center: BAKU, zoom: 14.25, pitch: is3D ? 44 : 0, bearing: -6, duration: 900, speed: 1.15, essential: true });
   }, [is3D]);
   const zoomCountry = useCallback(() => {
     setIs3D(false);
