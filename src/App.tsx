@@ -322,6 +322,26 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     }
   }, labelLayer);
   map.addLayer({
+    id: 'rm-osm-speed-limits', type: 'symbol', source: 'rm-osm-roads', minzoom: 15.5,
+    filter: ['all', ['has', 'maxspeed'], ['!=', ['get', 'maxspeed'], '']],
+    layout: {
+      'symbol-placement': 'line',
+      'symbol-spacing': 260,
+      'text-field': ['concat', ['get', 'maxspeed'], ' km/h'],
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 15.5, 8, 18, 10],
+      'text-padding': 12,
+      'text-keep-upright': true,
+      'text-allow-overlap': false
+    },
+    paint: {
+      'text-color': '#344c3c',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 2,
+      'text-halo-blur': 0.5
+    }
+  }, labelLayer);
+  map.addLayer({
     id: 'rm-osm-road-markings', type: 'line', source: 'rm-osm-roads',
     filter: ['all',
       ['match', ['get', 'roadClass'], 'motorway', true, 'trunk', true, 'primary', true, 'secondary', true, 'tertiary', true, false],
@@ -897,6 +917,7 @@ export default function App() {
     vis('rm-osm-roads-casing', showOsmRoads);
     vis('rm-osm-roads-line', showOsmRoads);
     vis('rm-osm-road-markings', showOsmRoads);
+    vis('rm-osm-speed-limits', showOsmRoads);
     vis('rm-osm-lane-markings-line', showOsmRoads);
     vis('rm-road-graph-lane-centres', showOsmRoads);
     vis('rm-road-graph-lane-edges', showOsmRoads);
