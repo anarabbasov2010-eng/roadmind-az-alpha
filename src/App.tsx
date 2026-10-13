@@ -954,6 +954,10 @@ export default function App() {
     (mapRef.current?.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(osmSignals, network, state?.timeSeconds || 0) as never);
     flashToast('Загружено фазовых планов: ' + result.updated + '. Проверка конфликтов пройдена.');
   };
+  const exportCalibrationTemplate = () => {
+    downloadTextFile('roadmind-calibration-template.csv', 'speed_kmh;flow_veh_per_hour;queue_meters\\n32;900;45\\n28;720;60\\n', 'text/csv;charset=utf-8');
+    flashToast('CSV-шаблон выгружен. Замените пример измерениями с места наблюдения.');
+  };
   const importCalibration = async (file: File) => {
     const samples = parseCalibrationCsv(await file.text());
     if (!samples.length) {
@@ -1035,6 +1039,7 @@ export default function App() {
             <button onClick={exportSignalPlans}><Download size={13} />Экспорт фаз светофоров</button>
             <button onClick={() => signalPlanInputRef.current?.click()}><RadioTower size={13} />Импорт программы фаз</button>
             <button onClick={() => calibrationInputRef.current?.click()}><Activity size={13} />Калибровка по CSV</button>
+            <button onClick={exportCalibrationTemplate}><Download size={13} />CSV-шаблон измерений</button>
             <input ref={signalPlanInputRef} type="file" accept=".json,application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) await importSignalPlans(file); }} />
             <input ref={calibrationInputRef} type="file" accept=".csv,text/csv" hidden onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) await importCalibration(file); }} />
           </div>
