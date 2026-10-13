@@ -138,19 +138,19 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
     const directional = directionalLaneCounts(road);
     const oneWay = isOneway(road);
     const reverseOnly = (road.oneway || '').toLowerCase() === '-1';
+    const forwardLanes = directional.forward;
+    const reverseLanes = directional.backward;
     for (let i = 0; i < coords.length - 1; i++) {
       const a = coords[i], b = coords[i + 1], from = ids[i], to = ids[i + 1];
       const length = distanceMeters(a, b);
       if (length < 0.3) continue;
       nodeMap.get(from)!.neighbours.add(to);
       nodeMap.get(to)!.neighbours.add(from);
-      const forwardLanes = directional.forward;
-      const reverseLanes = directional.backward;
       const edgeId = road.id + ':' + i;
       const forwardOffset = reverseLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0;
       const backwardOffset = forwardLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0;
       if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay, carriagewayOffsetMeters: forwardOffset });
-      if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseOnly ? lanes : reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay, carriagewayOffsetMeters: backwardOffset });
+      if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay, carriagewayOffsetMeters: backwardOffset });
     }
     // Draw each lane center independently, offsetting opposing carriageways to their proper sides.
     const addLaneLines = (line: Position[], count: number, baseOffset: number, direction: 1 | -1, laneStart: number) => {
