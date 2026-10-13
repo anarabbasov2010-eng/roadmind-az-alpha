@@ -952,7 +952,11 @@ export default function App() {
     scenarioSignalNodeMapRef.current.delete(signalId);
     if (!nodeId || Array.from(scenarioSignalNodeMapRef.current.values()).includes(nodeId)) return;
     const network = microNetworkRef.current;
-    if (network) resetScenarioController(network, nodeId);
+    if (!network) return;
+    resetScenarioController(network, nodeId);
+    const isMappedOsmSignal = osmSignalsRef.current.some((signal) => 'n' + signal.id === nodeId);
+    const controller = network.controllers.get(nodeId);
+    if (!isMappedOsmSignal && controller?.source !== 'imported') network.controllers.delete(nodeId);
   };
 
   const changeMode = (next: ToolMode) => {
