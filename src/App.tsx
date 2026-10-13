@@ -120,6 +120,57 @@ function importedRoadCollection(roads: OSMRoad[]): FeatureCollection {
   };
 }
 
+
+function offsetRoadLine(coordinates: Position[], offsetMeters: number): Position[] {
+  if (coordinates.length < 2 || Math.abs(offsetMeters) < 0.01) return coordinates;
+  return coordinates.map((point, index) => {
+    const previous = coordinates[Math.max(0, index - 1)];
+    const next = coordinates[Math.min(coordinates.length - 1, index + 1)];
+    const latitude = point[1] * Math.PI / 180;
+    const xScale = 111320 * Math.max(0.2, Math.cos(latitude));
+    const ax = previous[0] * xScale;
+    const ay = previous[1] * 110540;
+    const bx = next[0] * xScale;
+    const by = next[1] * 110540;
+    let dx = bx - ax;
+    let dy = by - ay;
+    const magnitude = Math.hypot(dx, dy) || 1;
+    dx /= magnitude;
+    dy /= magnitude;
+    const shiftedX = point[0] * xScale - dy * offsetMeters;
+    const shiftedY = point[1] * 110540 + dx * offsetMeters;
+    return [shiftedX / xScale, shiftedY / 110540] as Position;
+  });
+}
+
+function laneMarkingCollection(roads: OSMRoad[]): FeatureCollection {
+  const features: GeoFeature[] = [];
+  for (const road of roads) {
+    if (!['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(road.highway)) continue;
+    const lanes = Number.parseInt(road.lanes || '', 10);
+    if (!Number.isFinite(lanes) || lanes < 2 || lanes > 8) continue;
+    const oneway = ['yes', '1', 'true', '-1'].includes((road.oneway || '').toLowerCase());
+    let offsets: number[] = [];
+    if (oneway) {
+      for (let index = 1; index < lanes; index += 1) offsets.push((index - lanes / 2) * 3.25);
+    } else if (lanes >= 4) {
+      for (let index = 1; index < lanes; index += 1) {
+        const offset = (index - lanes / 2) * 3.25;
+        if (Math.abs(offset) >= 2.0) offsets.push(offset);
+      }
+    }
+    offsets.forEach((offset, index) => {
+      features.push({
+        type: 'Feature',
+        id: String(road.id) + '-lane-' + index,
+        geometry: { type: 'LineString', coordinates: offsetRoadLine(road.coordinates, offset) },
+        properties: { id: String(road.id) + '-lane-' + index, roadClass: road.highway, offset }
+      });
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
 function importedSignalCollection(signals: OSMSignal[]): FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -227,13 +278,27 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   }, labelLayer);
   map.addLayer({
     id: 'rm-osm-road-markings', type: 'line', source: 'rm-osm-roads',
-    filter: ['match', ['get', 'roadClass'], 'motorway', true, 'trunk', true, 'primary', true, 'secondary', true, 'tertiary', true, false],
+    filter: ['all',
+      ['match', ['get', 'roadClass'], 'motorway', true, 'trunk', true, 'primary', true, 'secondary', true, 'tertiary', true, false],
+      ['!', ['match', ['get', 'oneway'], 'yes', true, '1', true, 'true', true, '-1', true, false]]
+    ],
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
     paint: {
       'line-color': '#ffffff',
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.35, 15, 0.8, 18, 1.15],
       'line-opacity': 0.88,
       'line-dasharray': [2.1, 3]
+    }
+  }, labelLayer);
+  map.addSource('rm-osm-lane-markings', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({
+    id: 'rm-osm-lane-markings-line', type: 'line', source: 'rm-osm-lane-markings',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.35, 15, 0.65, 18, 1.05],
+      'line-opacity': 0.87,
+      'line-dasharray': [2, 2.8]
     }
   }, labelLayer);
 
@@ -451,6 +516,8 @@ export default function App() {
       setShowOsmSignals(true);
       const roadSource = map.getSource('rm-osm-roads') as GeoJSONSource | undefined;
       roadSource?.setData(importedRoadCollection(roadsCapped) as never);
+      const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
+      laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
       const signalSource = map.getSource('rm-osm-signals') as GeoJSONSource | undefined;
       signalSource?.setData(importedSignalCollection(signalsCapped) as never);
       if (!automatic) flashToast('OpenStreetMap: ' + roadsCapped.length + ' дорог и ' + signalsCapped.length + ' отмеченных светофоров загружено.');
@@ -618,6 +685,7 @@ export default function App() {
     vis('rm-osm-roads-casing', showOsmRoads);
     vis('rm-osm-roads-line', showOsmRoads);
     vis('rm-osm-road-markings', showOsmRoads);
+    vis('rm-osm-lane-markings-line', showOsmRoads);
     vis('rm-osm-signal-halo', showOsmSignals);
     vis('rm-osm-signal-points', showOsmSignals);
     vis('rm-demo-casing', showDemo);
