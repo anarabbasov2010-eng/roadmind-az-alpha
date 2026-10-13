@@ -94,8 +94,7 @@ export function buildMicroNetwork(network: RoadNetwork): MicroNetwork {
       for (let i = 1; i < geometry.length; i++) lengthMeters += distance(geometry[i - 1], geometry[i]);
       const lanePairs: Array<[number, number]> = [];
       for (let lane = 0; lane < countIn; lane++) {
-        const allowed = kind === 'left' ? lane >= Math.max(0, countIn - 2) : kind === 'right' ? lane <= 1 : lane <= countIn - 1;
-        if (!allowed) continue;
+        // Without mapped turn:lanes tags, all lanes are provisionally permissive.
         const toLane = kind === 'left' ? Math.min(countOut - 1, lane) : kind === 'right' ? Math.max(0, countOut - countIn + lane) : clamp(lane, 0, countOut - 1);
         lanePairs.push([lane, toLane]);
       }
@@ -106,16 +105,17 @@ export function buildMicroNetwork(network: RoadNetwork): MicroNetwork {
       });
     }
   }
-  for (let i = 0; i < movements.length; i++) for (let j = i + 1; j < movements.length; j++) {
-    const a = movements[i], b = movements[j];
-    if (a.nodeId !== b.nodeId || (a.fromEdgeId === b.fromEdgeId && a.fromLane === b.fromLane) || (a.toEdgeId === b.toEdgeId && a.toLane === b.toLane)) continue;
+  const movementsAtNode = new Map<string, Movement[]>();
+  for (const movement of movements) movementsAtNode.set(movement.nodeId, [...(movementsAtNode.get(movement.nodeId) || []), movement]);
+  for (const atNode of movementsAtNode.values()) for (let i = 0; i < atNode.length; i++) for (let j = i + 1; j < atNode.length; j++) {
+    const a = atNode[i], b = atNode[j];
+    if ((a.fromEdgeId === b.fromEdgeId && a.fromLane === b.fromLane) || (a.toEdgeId === b.toEdgeId && a.toLane === b.toLane)) continue;
     if (conflicts(a.geometry, b.geometry)) { a.conflictIds.push(b.id); b.conflictIds.push(a.id); }
   }
   const movementsByIncomingEdge = new Map<string, Movement[]>();
   for (const movement of movements) movementsByIncomingEdge.set(movement.fromEdgeId, [...(movementsByIncomingEdge.get(movement.fromEdgeId) || []), movement]);
   const controllers = new Map<string, JunctionController>();
-  for (const [nodeId] of incoming) {
-    const atNode = movements.filter((movement) => movement.nodeId === nodeId);
+  for (const [nodeId, atNode] of movementsAtNode) {
     if (!atNode.length) continue;
     // Greedy conflict-graph colouring produces phases that never intentionally green-light a geometric conflict pair.
     const colors: Movement[][] = [];
