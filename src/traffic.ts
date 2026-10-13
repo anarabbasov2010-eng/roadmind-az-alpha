@@ -147,9 +147,15 @@ export function advanceTraffic(
   signals: ScenarioSignal[],
   speedLimitKmh: number,
   deltaSeconds: number,
+  routeLengthKm = 2.6,
 ): TrafficState {
   const dt = Math.max(0, Math.min(1, Number(deltaSeconds) || 0));
   const speedLimit = Math.max(10, Math.min(100, Number(speedLimitKmh) || 40));
+  const routeKm = Math.max(0.05, Number(routeLengthKm) || 2.6);
+  const vehicleGapLimit = 17.7 / (routeKm * 1000);
+  const vehicleStopGap = 7.3 / (routeKm * 1000);
+  const signalApproachGap = 26 / (routeKm * 1000);
+  const signalMinGap = 1.3 / (routeKm * 1000);
   const nextTime = state.time + dt;
   const ordered = [...state.vehicles].sort((a, b) => a.progress - b.progress);
   let completedTrips = state.completedTrips;
@@ -161,22 +167,22 @@ export function advanceTraffic(
     let speed = speedLimit * 0.72;
     let stopped = false;
 
-    if (leader.id !== vehicle.id && gap < 0.0068) {
-      speed *= Math.max(0, gap / 0.0068);
-      if (gap < 0.0028) stopped = true;
+    if (leader.id !== vehicle.id && gap < vehicleGapLimit) {
+      speed *= Math.max(0, gap / vehicleGapLimit);
+      if (gap < vehicleStopGap) stopped = true;
     }
 
     for (const signal of signals) {
       if (!signal.connectedToDemoRoute || !isSignalRed(signal, nextTime)) continue;
       const ahead = (signal.progress - vehicle.progress + 1) % 1;
-      if (ahead < 0.010 && ahead > 0.0005) {
+      if (ahead < signalApproachGap && ahead > signalMinGap) {
         speed = 0;
         stopped = true;
         break;
       }
     }
 
-    const nextProgressRaw = vehicle.progress + ((speed / 3600) / 2.6) * dt;
+    const nextProgressRaw = vehicle.progress + ((speed / 3600) / routeKm) * dt;
     if (nextProgressRaw >= 1) completedTrips += 1;
     if (stopped) totalWaitSeconds += dt;
     return {
