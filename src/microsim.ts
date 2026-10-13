@@ -374,14 +374,14 @@ export function parseCalibrationCsv(csv: string): CalibrationSample[] {
     .filter((sample) => Number.isFinite(sample.observedSpeedKmh) && sample.observedSpeedKmh >= 0 && sample.observedSpeedKmh <= 160 && Number.isFinite(sample.observedFlowVehPerHour) && sample.observedFlowVehPerHour >= 0 && sample.observedFlowVehPerHour <= 10000 && Number.isFinite(sample.observedQueueMeters) && sample.observedQueueMeters >= 0 && sample.observedQueueMeters <= 100000);
 }
 export function calibrateMicroConfig(samples: CalibrationSample[], base: MicroConfig = DEFAULT_MICRO_CONFIG) {
-  if (!samples.length) return { config: base, sampleCount: 0, rmseSpeedKmh: 0 };
+  if (!samples.length) return { config: base, sampleCount: 0, speedSpreadKmh: 0 };
   const mean = (select: (sample: CalibrationSample) => number) => samples.reduce((sum, sample) => sum + select(sample), 0) / samples.length;
   const speed = mean((sample) => sample.observedSpeedKmh);
   const flow = mean((sample) => sample.observedFlowVehPerHour);
   const queue = mean((sample) => sample.observedQueueMeters);
   const config = { ...base, defaultSpeedKmh: clamp(speed, 10, 100), desiredHeadwaySeconds: clamp(3600 / Math.max(1, flow), 0.8, 3.2), standstillGapMeters: clamp(queue / Math.max(1, samples.length * 3), 1.5, 8) };
-  const rmseSpeedKmh = Math.sqrt(samples.reduce((sum, sample) => sum + (sample.observedSpeedKmh - config.defaultSpeedKmh) ** 2, 0) / samples.length);
-  return { config, sampleCount: samples.length, rmseSpeedKmh };
+  const speedSpreadKmh = Math.sqrt(samples.reduce((sum, sample) => sum + (sample.observedSpeedKmh - config.defaultSpeedKmh) ** 2, 0) / samples.length);
+  return { config, sampleCount: samples.length, speedSpreadKmh };
 }
 
 export type SignalPlanImportResult = { ok: boolean; updated: number; errors: string[] };
