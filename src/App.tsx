@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, type RoadInput } from './road-graph';
+import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, type MicroNetwork, type MicroState } from './microsim';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
@@ -359,6 +360,8 @@ export default function App() {
   const mapRef = useRef<MapLibreMap | null>(null);
   const simulationRouteRef = useRef<Position[]>(DEMO_ROUTE);
   const simulationRouteLengthKmRef = useRef(2.6);
+  const microNetworkRef = useRef<MicroNetwork | null>(null);
+  const microStateRef = useRef<MicroState | null>(null);
   const modeRef = useRef<ToolMode>('select');
   const pendingRoadRef = useRef<Position | null>(null);
   const lastRequestAtRef = useRef(0);
@@ -509,7 +512,9 @@ export default function App() {
             highway: element.tags.highway,
             coordinates: element.geometry.map((point) => [point.lon, point.lat] as Position),
             nodeRefs: element.nodes,
-            lanes: element.tags.lanes, maxspeed: element.tags.maxspeed, oneway: element.tags.oneway,
+            lanes: element.tags.lanes, lanesForward: element.tags['lanes:forward'], lanesBackward: element.tags['lanes:backward'],
+            turnLanesForward: element.tags['turn:lanes:forward'], turnLanesBackward: element.tags['turn:lanes:backward'],
+            maxspeed: element.tags.maxspeed, oneway: element.tags.oneway,
             surface: element.tags.surface, width: element.tags.width, access: element.tags.access,
             junction: element.tags.junction, bridge: element.tags.bridge, tunnel: element.tags.tunnel
           });
@@ -535,6 +540,11 @@ export default function App() {
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
       const network = buildRoadNetwork(roadsCapped);
+      const signalNodeIds = new Set(signalsCapped.map((signal) => 'n' + signal.id));
+      const microNetwork = buildMicroNetwork(network, signalNodeIds);
+      const microState = createMicroState(microNetwork, { ...DEFAULT_MICRO_CONFIG, defaultSpeedKmh: speedLimit });
+      microNetworkRef.current = microNetwork;
+      microStateRef.current = microState;
       const route = buildClosedSimulationRoute(network);
       if (route && route.length >= 4) {
         simulationRouteRef.current = route;
@@ -565,10 +575,11 @@ export default function App() {
         (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(trafficRef.current, DEMO_ROUTE) as never);
       }
       (map.getSource('rm-road-graph-lanes') as GeoJSONSource | undefined)?.setData(laneLineCollection(network) as never);
+      (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, microState) as never);
       (map.getSource('rm-road-graph-nodes') as GeoJSONSource | undefined)?.setData(networkNodeCollection(network) as never);
       const signalSource = map.getSource('rm-osm-signals') as GeoJSONSource | undefined;
       signalSource?.setData(importedSignalCollection(signalsCapped) as never);
-      if (!automatic) flashToast('OSM: ' + network.stats.roads + ' дорог · ' + network.stats.nodes + ' узлов · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос' + (route ? ' · машины на реальном дорожном цикле' : ' · замкнутый маршрут не найден') + '.');
+      if (!automatic) flashToast('Сеть OSM: ' + network.stats.roads + ' дорог · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос · ' + microNetwork.stats.movements + ' манёвров · ' + microNetwork.stats.conflicts + ' конфликтов · ' + microNetwork.stats.controlledJunctions + ' узлов со светофорами.');
     } catch (error) {
       setOsmStatus('error');
       if (!automatic) flashToast('Не удалось обновить OSM. Проверьте интернет или повторите позже.');
@@ -725,7 +736,9 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
-    (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(traffic, simulationRouteRef.current) as never);
+    const microNetwork = microNetworkRef.current;
+    const microState = microStateRef.current;
+    (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microNetwork && microState && microState.vehicles.length ? microVehicleCollection(microNetwork, microState) as never : carsCollection(traffic, simulationRouteRef.current) as never);
   }, [traffic]);
   useEffect(() => {
     const map = mapRef.current;
@@ -754,6 +767,13 @@ export default function App() {
   useEffect(() => {
     if (!isRunning || mapStatus !== 'ready') return;
     const timer = window.setInterval(() => {
+      const microNetwork = microNetworkRef.current;
+      const currentMicro = microStateRef.current;
+      if (microNetwork && currentMicro && currentMicro.vehicles.length) {
+        const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...DEFAULT_MICRO_CONFIG, defaultSpeedKmh: speedLimit }, 0.1 * speedMultiplier);
+        microStateRef.current = nextMicro;
+        (mapRef.current?.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, nextMicro) as never);
+      }
       const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, 0.1 * speedMultiplier, simulationRouteLengthKmRef.current);
       trafficRef.current = next;
       setTraffic(next);
