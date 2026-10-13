@@ -129,6 +129,10 @@ test('scenario signal overrides control its junction but imported plans stay aut
   const movementId = controller.phases[0].movementIds[0];
   configureScenarioSignal(micro, nodeId, { cycleSeconds: 80, greenShare: 0.6, offsetSeconds: 3, manualState: 'red' });
   assert.equal(signalStateAt(controller, 0, movementId), 'red');
+  controller.source = 'scenario';
+  configureScenarioSignal(micro, nodeId, { cycleSeconds: 80, greenShare: 0.6, offsetSeconds: 3, manualState: null });
+  const cycleLength = controller.phases.reduce((sum, phase) => sum + phase.greenSeconds + phase.yellowSeconds + phase.allRedSeconds, 0);
+  assert.ok(Math.abs(cycleLength - 80) < 0.1);
   controller.source = 'imported';
   controller.forcedState = null;
   const previousOffset = controller.cycleOffsetSeconds;
