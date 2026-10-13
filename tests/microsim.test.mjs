@@ -74,3 +74,34 @@ test('calibration CSV parses observations and adjusts simulation parameters', ()
   assert.ok(result.config.desiredHeadwaySeconds > 0);
   assert.ok(result.rmseSpeedKmh >= 0);
 });
+
+test('OSM turn restrictions remove prohibited movements at a via node', () => {
+  const network = buildRoadNetwork([
+    road(101, [[49.000, 40.000], [49.001, 40.000]], [1, 2]),
+    road(102, [[49.001, 40.000], [49.002, 40.000]], [2, 3]),
+    road(103, [[49.001, 40.000], [49.001, 40.001]], [2, 4])
+  ]);
+  const micro = buildMicroNetwork(network, new Set(), [
+    { fromWayId: 101, toWayId: 102, viaNodeId: 'n2', restriction: 'no_straight_on' }
+  ]);
+  assert.ok(!micro.movements.some((movement) => movement.nodeId === 'n2' && movement.fromEdgeId.startsWith('101:') && movement.toEdgeId.startsWith('102:')));
+});
+
+test('signal plan export is a complete editable template and rejects conflicting plans', async () => {
+  const { exportSignalPlanJson, importSignalPlanJson } = await import('../src/microsim.ts');
+  const micro = buildMicroNetwork(squareNetwork());
+  const template = JSON.parse(exportSignalPlanJson(micro));
+  assert.equal(template.schemaVersion, 1);
+  if (template.controllers.length) {
+    const controller = template.controllers[0];
+    const movementIds = micro.movements.filter((movement) => movement.nodeId === controller.nodeId);
+    if (movementIds.length > 1) {
+      controller.phases = [{
+        id: 'bad', name: 'unsafe', greenSeconds: 30, yellowSeconds: 3, allRedSeconds: 1,
+        movementIds: movementIds.map((movement) => movement.id)
+      }];
+      const result = importSignalPlanJson(micro, JSON.stringify(template));
+      assert.equal(result.ok, false);
+    }
+  }
+});
