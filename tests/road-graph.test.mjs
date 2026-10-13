@@ -45,3 +45,26 @@ test('lengths are metric and finite', () => {
   const distance = distanceMeters([49, 40], [49.001, 40]);
   assert.ok(distance > 80 && distance < 100);
 });
+
+test('opposing carriageways are offset to separate sides of a bidirectional road', () => {
+  const graph = buildRoadNetwork([
+    road(41, [[49.0, 40.0], [49.002, 40.0]], [401, 402], { lanes: '4' })
+  ]);
+  assert.equal(graph.laneLines.length, 4);
+  const forward = graph.laneLines.filter((lane) => lane.direction === 1);
+  const reverse = graph.laneLines.filter((lane) => lane.direction === -1);
+  const averageLat = (lane) => lane.geometry.reduce((sum, point) => sum + point[1], 0) / lane.geometry.length;
+  assert.ok(forward.every((lane) => averageLat(lane) < 40));
+  assert.ok(reverse.every((lane) => averageLat(lane) > 40));
+});
+
+test('directional OSM lane counts override a generic total', () => {
+  const graph = buildRoadNetwork([
+    road(42, [[49.0, 40.0], [49.001, 40.0]], [411, 412], { lanesForward: '3', lanesBackward: '1' })
+  ]);
+  const forward = graph.edges.filter((edge) => edge.roadId === 42 && edge.direction === 1);
+  const reverse = graph.edges.filter((edge) => edge.roadId === 42 && edge.direction === -1);
+  assert.ok(forward.every((edge) => edge.lanes === 3));
+  assert.ok(reverse.every((edge) => edge.lanes === 1));
+  assert.equal(graph.stats.laneCount, 4);
+});
