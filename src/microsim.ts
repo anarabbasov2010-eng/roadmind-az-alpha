@@ -482,3 +482,16 @@ export function configureScenarioSignal(net: MicroNetwork, nodeId: string, signa
     phase.allRedSeconds = 1;
   }
 }
+
+export function resetScenarioController(net: MicroNetwork, nodeId: string): void {
+  const controller = net.controllers.get(nodeId);
+  if (!controller || controller.source === 'imported') return;
+  controller.source = 'generated';
+  controller.forcedState = null;
+  controller.cycleOffsetSeconds = 0;
+  controller.phases.forEach((phase, index) => {
+    phase.greenSeconds = index === 0 ? 24 : 12;
+    phase.yellowSeconds = 3;
+    phase.allRedSeconds = 1;
+  });
+}
