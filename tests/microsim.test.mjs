@@ -66,7 +66,7 @@ test('vehicles use imported street edges and advance with acceleration limits', 
 });
 
 test('calibration CSV parses observations and adjusts simulation parameters', () => {
-  const samples = parseCalibrationCsv('speed_kmh;flow_veh_per_hour;queue_meters\n32;900;45\n28;720;60');
+  const samples = parseCalibrationCsv('timestamp;location;source;speed_kmh;flow_veh_per_hour;queue_meters\n2026-10-13T10:00:00Z;Baku-J1;manual-counter;32;900;45\n2026-10-13T10:05:00Z;Baku-J1;manual-counter;28;720;60');
   assert.equal(samples.length, 2);
   const result = calibrateMicroConfig(samples);
   assert.equal(result.sampleCount, 2);
