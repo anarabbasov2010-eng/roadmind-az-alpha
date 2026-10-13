@@ -52,20 +52,25 @@ function emptyCollection(): FeatureCollection {
   return { type: 'FeatureCollection', features: [] };
 }
 
-function signalCollection(signals: ScenarioSignal[], time: number): FeatureCollection {
+function signalCollection(signals: ScenarioSignal[], time: number, network?: MicroNetwork | null, microTime = 0, nodeMap?: Map<string, string>): FeatureCollection {
   return {
     type: 'FeatureCollection',
-    features: signals.map((signal) => ({
-      type: 'Feature', id: signal.id,
-      geometry: { type: 'Point', coordinates: signal.coordinates },
-      properties: {
-        id: signal.id, name: signal.name,
-        state: isSignalRed(signal, time) ? 'red' : 'green',
-        icon: isSignalRed(signal, time) ? 'rm-signal-red' : 'rm-signal-green',
-        connected: signal.connectedToDemoRoute,
-        manual: signal.manualState !== null
-      }
-    }))
+    features: signals.map((signal) => {
+      const nodeId = nodeMap?.get(signal.id);
+      const controller = nodeId ? network?.controllers.get(nodeId) : undefined;
+      const movement = controller ? network?.movements.find((item) => item.nodeId === controller.nodeId) : undefined;
+      const state = controller && movement ? signalStateAt(controller, microTime, movement.id) : isSignalRed(signal, time) ? 'red' : 'green';
+      return {
+        type: 'Feature', id: signal.id,
+        geometry: { type: 'Point', coordinates: signal.coordinates },
+        properties: {
+          id: signal.id, name: signal.name, state,
+          icon: state === 'red' ? 'rm-signal-red' : state === 'yellow' ? 'rm-signal-yellow' : 'rm-signal-green',
+          connected: Boolean(nodeId) || signal.connectedToDemoRoute,
+          manual: signal.manualState !== null
+        }
+      };
+    })
   };
 }
 
@@ -702,7 +707,7 @@ export default function App() {
       window.clearTimeout(failTimer);
       try {
         await addMapLayers(map, signalsRef.current);
-        (map.getSource('rm-user-signals') as GeoJSONSource).setData(signalCollection(signalsRef.current, trafficRef.current.time) as never);
+        (map.getSource('rm-user-signals') as GeoJSONSource).setData(signalCollection(signalsRef.current, trafficRef.current.time, microNetworkRef.current, microStateRef.current?.timeSeconds || 0, scenarioSignalNodeMapRef.current) as never);
         (map.getSource('rm-user-roads') as GeoJSONSource).setData(roadCollection(roadsRef.current) as never);
         (map.getSource('rm-vehicles') as GeoJSONSource).setData(carsCollection(trafficRef.current) as never);
         setMapStatus('ready');
@@ -812,7 +817,7 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
-    (map.getSource('rm-user-signals') as GeoJSONSource | undefined)?.setData(signalCollection(signals, traffic.time) as never);
+    (map.getSource('rm-user-signals') as GeoJSONSource | undefined)?.setData(signalCollection(signals, traffic.time, microNetworkRef.current, microStateRef.current?.timeSeconds || 0, scenarioSignalNodeMapRef.current) as never);
   }, [signals, traffic.time]);
   useEffect(() => {
     const map = mapRef.current;
