@@ -289,7 +289,8 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     if (vehicle.speedMps < 0.15) { vehicle.stoppedSeconds += dt; vehicle.delaySeconds += dt; totalDelaySeconds += dt; }
     if (vehicle.distanceOnEdge >= edgeLen(edge) - 0.05) {
       if (isLast) {
-        vehicle.routeIndex = 0; vehicle.distanceOnEdge = 0; vehicle.completedTrips++; completedTrips++;
+        vehicle.distanceOnEdge = Math.max(0, edgeLen(edge) - 0.1);
+        vehicle.speedMps = 0;
       } else if (movement && light === 'green' && !conflictBusy) {
         occupiedMovements.add(movement.id);
         vehicle.activeMovementId = movement.id; vehicle.connectorDistance = 0;
