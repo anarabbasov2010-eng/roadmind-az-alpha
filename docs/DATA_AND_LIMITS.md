@@ -11,7 +11,7 @@
 - Creates lane-to-lane connector curves at graph junctions, infers geometric conflicts, and schedules non-conflicting movement groups in generated fixed-time phases at mapped signal nodes.
 - Moves vehicles on imported street edges with acceleration/braking bounds, speed caps, lane occupancy, time-headway following and signal approach stopping.
 - Allows users to export an editable signal-plan JSON template and import plans after schema, duration, movement coverage and geometric conflict validation.
-- Allows CSV import of observed speed, hourly flow and queue length to adjust a first-pass set of model parameters.
+- Allows CSV import of observed speed, hourly flow and queue length with required timestamp, location and source fields to adjust a first-pass set of model parameters.
 
 ## What is not live or verified
 - No live municipal signal-controller connection exists. OSM signal nodes do not provide current lamp colour, phase, cycle offset or approved timing programmes. Automatically generated phases are fallback assumptions, not actual Baku signal timings. Use only verified field/controller plans for a real scenario.
