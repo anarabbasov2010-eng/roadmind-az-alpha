@@ -266,3 +266,40 @@ button:disabled { opacity: .55; cursor: wait !important; }
 .camera-dock-title > span { margin-left: auto; color: #839083; font: 8px var(--mono); }
 .camera-dock label { display: grid; grid-template-columns: 49px 1fr; align-items: center; gap: 8px; margin-top: 7px; color: #7b877b; font-size: 8px; }
 .camera-dock input[type="range"] { width: 100%; height: 3px; accent-color: #4c8764; cursor: pointer; }
+
+
+.engineering-tools {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0 10px;
+  padding: 10px;
+  border: 1px solid #e2e8de;
+  border-radius: 9px;
+  background: rgba(247, 249, 244, .78);
+}
+.engineering-tools-title {
+  margin: 0 0 3px;
+  color: #728071;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.engineering-tools button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 29px;
+  padding: 6px 7px;
+  border: 1px solid #e2e7df;
+  border-radius: 6px;
+  background: #fff;
+  color: #4f6253;
+  text-align: left;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease;
+}
+.engineering-tools button:hover { background: #f0f5ee; border-color: #b9cbbb; }
