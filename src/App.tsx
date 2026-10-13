@@ -793,6 +793,7 @@ export default function App() {
           return;
         }
         const first = pendingRoadRef.current;
+        const snappedStartConfirmed = microNetworkRef.current ? Boolean(nearestRoadNode(microNetworkRef.current.source, first, 0.5)) : false;
         const snappedEnd = microNetworkRef.current ? nearestRoadNode(microNetworkRef.current.source, point, 20) : null;
         const second = snappedEnd?.coordinate || point;
         pendingRoadRef.current = null;
@@ -805,7 +806,7 @@ export default function App() {
         setSelectedRoadId(road.id);
         setSelectedSignalId(null);
         setMode('select'); modeRef.current = 'select';
-        flashToast(snappedEnd ? 'Участок добавлен и привязан к дорожному графу.' : 'Участок сохранён. Его конец не привязан к существующему узлу сети.');
+        flashToast(snappedStartConfirmed && snappedEnd ? 'Оба конца привязаны к графу: участок участвует в симуляции.' : 'Участок сохранён, но один или оба конца не привязаны к существующему узлу сети.');
         return;
       }
       if (activeMode === 'erase') {
