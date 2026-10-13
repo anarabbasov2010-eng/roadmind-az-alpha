@@ -392,10 +392,11 @@ export function importSignalPlanJson(net: MicroNetwork, input: string): SignalPl
     if (!Array.isArray(item.phases) || item.phases.length < 1 || item.phases.length > 16) { errors.push(nodeId + ': число фаз должно быть от 1 до 16.'); continue; }
     const phases: SignalPhase[] = [];
     const allowed = new Set(net.movements.filter((movement) => movement.nodeId === nodeId).map((movement) => movement.id));
+    const covered = new Set<string>();
     for (const raw of item.phases as Array<Record<string, unknown>>) {
       const movementIds = Array.isArray(raw.movementIds) ? raw.movementIds.filter((id): id is string => typeof id === 'string') : [];
       const greenSeconds = Number(raw.greenSeconds), yellowSeconds = Number(raw.yellowSeconds), allRedSeconds = Number(raw.allRedSeconds);
-      if (!movementIds.length || movementIds.some((id) => !allowed.has(id))) { errors.push(nodeId + ': фаза содержит пустые или неизвестные движения.'); continue; }
+      if (!movementIds.length || movementIds.some((id) => !allowed.has(id)) || new Set(movementIds).size !== movementIds.length || movementIds.some((id) => covered.has(id))) { errors.push(nodeId + ': фаза содержит пустые, неизвестные или повторные движения.'); continue; }
       if (!Number.isFinite(greenSeconds) || greenSeconds < 5 || greenSeconds > 180 || !Number.isFinite(yellowSeconds) || yellowSeconds < 2 || yellowSeconds > 8 || !Number.isFinite(allRedSeconds) || allRedSeconds < 0 || allRedSeconds > 8) {
         errors.push(nodeId + ': некорректная длительность фазы.'); continue;
       }
@@ -403,9 +404,11 @@ export function importSignalPlanJson(net: MicroNetwork, input: string): SignalPl
       if (net.movements.some((movement) => movement.nodeId === nodeId && conflictSet.has(movement.id) && movement.conflictIds.some((id) => conflictSet.has(id)))) {
         errors.push(nodeId + ': в одной фазе есть геометрически конфликтующие манёвры.'); continue;
       }
+      movementIds.forEach((id) => covered.add(id));
       phases.push({ id: typeof raw.id === 'string' ? raw.id : nodeId + ':imported:' + phases.length, name: typeof raw.name === 'string' ? raw.name : 'Фаза ' + (phases.length + 1), movementIds, greenSeconds, yellowSeconds, allRedSeconds });
     }
-    if (phases.length === item.phases.length) staged.push({ nodeId, cycleOffsetSeconds: Number.isFinite(Number(item.cycleOffsetSeconds)) ? Number(item.cycleOffsetSeconds) : 0, phases });
+    if (covered.size !== allowed.size) errors.push(nodeId + ': план должен назначить каждое движение ровно одной фазе.');
+    if (phases.length === item.phases.length && covered.size === allowed.size) staged.push({ nodeId, cycleOffsetSeconds: Number.isFinite(Number(item.cycleOffsetSeconds)) ? Number(item.cycleOffsetSeconds) : 0, phases });
   }
   if (errors.length) return { ok: false, updated: 0, errors };
   for (const controller of staged) net.controllers.set(controller.nodeId, controller);
