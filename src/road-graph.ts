@@ -145,6 +145,9 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
     intersection: node.neighbours.size >= 3
   }));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const adjacency = new Map<string, Set<string>>();
+  for (const node of nodes) adjacency.set(node.id, new Set());
+  for (const edge of edges) { adjacency.get(edge.from)?.add(edge.to); adjacency.get(edge.to)?.add(edge.from); }
   const componentsSeen = new Set<string>();
   let connectedComponents = 0;
   for (const node of nodes) {
@@ -152,11 +155,9 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
     connectedComponents += 1;
     const stack = [node.id]; componentsSeen.add(node.id);
     while (stack.length) {
-      const current = nodeById.get(stack.pop()!);
-      if (!current) continue;
-      for (const edge of edges) {
-        const next = edge.from === current.id ? edge.to : edge.to === current.id ? edge.from : null;
-        if (next && !componentsSeen.has(next)) { componentsSeen.add(next); stack.push(next); }
+      const current = stack.pop()!;
+      for (const next of adjacency.get(current) || []) {
+        if (!componentsSeen.has(next)) { componentsSeen.add(next); stack.push(next); }
       }
     }
   }
