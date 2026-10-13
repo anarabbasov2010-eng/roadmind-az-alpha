@@ -225,7 +225,7 @@ export default function App() {
   const lastRequestAtRef = useRef(0);
   const lastSyncCenterRef = useRef<Position | null>(null);
   const lastAutoTimerRef = useRef<number | null>(null);
-  const syncOsmRef = useRef<((automatic?: boolean) => void) | null>(null);
+  const syncOsmRef = useRef<((automatic?: boolean, periodic?: boolean) => void) | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const signalsRef = useRef<ScenarioSignal[]>(stored.signals || initialSignals());
   const roadsRef = useRef<RoadDraft[]>(stored.roads || []);
@@ -278,7 +278,42 @@ export default function App() {
   useEffect(() => { roadsRef.current = roads; }, [roads]);
   useEffect(() => { trafficRef.current = traffic; }, [traffic]);
 
-  const syncOsm = useCallback(async (automatic = false) => {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'v' || key === 's' || key === 'e') {
+        const next: ToolMode = key === 'v' ? 'select' : key === 's' ? 'signal' : 'erase';
+        pendingRoadRef.current = null;
+        modeRef.current = next;
+        setMode(next);
+        if (next === 'signal') flashToast('Режим светофора: щёлкните по карте.');
+        else if (next === 'erase') flashToast('Режим удаления: доступны только элементы сценария.');
+      } else if (event.code === 'Space') {
+        event.preventDefault();
+        setIsRunning((running) => !running);
+      } else if (key === '+' || key === '=') {
+        mapRef.current?.zoomIn({ duration: 220, essential: true });
+      } else if (key === '-') {
+        mapRef.current?.zoomOut({ duration: 220, essential: true });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [flashToast]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      const map = mapRef.current;
+      if (map && map.getZoom() >= 11.5) void syncOsmRef.current?.(true, true);
+    }, 30 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const syncOsm = useCallback(async (automatic = false, periodic = false) => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
     if (map.getZoom() < 11.5) {
@@ -292,7 +327,7 @@ export default function App() {
       return;
     }
     const center = map.getCenter();
-    if (automatic && lastSyncCenterRef.current) {
+    if (automatic && !periodic && lastSyncCenterRef.current) {
       const moved = Math.hypot(center.lng - lastSyncCenterRef.current[0], center.lat - lastSyncCenterRef.current[1]);
       if (moved < 0.008) return;
     }
@@ -308,7 +343,7 @@ export default function App() {
       const north = (center.lat + halfLat).toFixed(5);
       const east = (center.lng + halfLon).toFixed(5);
       const query = '[out:json][timeout:25];(' +
-        'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|busway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'node["highway"="traffic_signals"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         ');out geom;';
       const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
