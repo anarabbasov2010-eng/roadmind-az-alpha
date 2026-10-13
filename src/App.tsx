@@ -276,7 +276,7 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
       id: 'rm-3d-buildings', type: 'fill-extrusion', source: 'rm-buildings', 'source-layer': 'building', minzoom: 13,
       filter: ['!=', ['get', 'hide_3d'], true],
       paint: {
-        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 9], 0, '#e3e4dc', 18, '#d2d8cf', 55, '#c5d0c5', 140, '#b5c3b7'],
+        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 9], 0, '#e5e5df', 18, '#d7d9d2', 55, '#c9cec5', 140, '#b8c2b8'],
         'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.8, 0, 14.25, ['coalesce', ['get', 'render_height'], ['get', 'height'], 9]],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
         'fill-extrusion-opacity': 0.94,
@@ -306,16 +306,16 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   map.addLayer({
     id: 'rm-osm-roads-casing', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#a9b0a7', 'line-width': ['+', roadWidth, 2.2] as never, 'line-opacity': 0.78 }
+    paint: { 'line-color': '#c5c8c0', 'line-width': ['+', roadWidth, 4.2] as never, 'line-opacity': 0.96 }
   }, labelLayer);
   map.addLayer({
     id: 'rm-osm-roads-line', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': ['match', ['get', 'roadClass'],
-        'motorway', '#f8f0dc', 'trunk', '#f7f0dc', 'primary', '#f7f3e8',
-        'secondary', '#e5e7df', 'tertiary', '#f4f4ed', 'unclassified', '#edece5',
-        'residential', '#e7e8e1', 'living_street', '#e1e3dc', 'service', '#e5e7df', '#ecece6'
+        'motorway', '#666e6b', 'trunk', '#69716e', 'primary', '#6e7471',
+        'secondary', '#777d79', 'tertiary', '#858a85', 'unclassified', '#969a93',
+        'residential', '#a0a39c', 'living_street', '#a8aaa2', 'service', '#b1b2aa', '#9b9e97'
       ],
       'line-width': roadWidth as never,
       'line-opacity': 0.97
@@ -698,8 +698,10 @@ export default function App() {
         if (toIndex === 0) restriction.toDirection = 1;
         else if (toIndex === toRefs.length - 1) restriction.toDirection = -1;
       }
-      const roadsCapped = parsedRoads.slice(0, 6000);
-      const signalsCapped = parsedSignals.slice(0, 2000);
+      // Keep the complete returned local network. Truncating by Overpass response order
+      // can silently remove entire neighborhoods and disconnect routes on one side of the map.
+      const roadsCapped = parsedRoads;
+      const signalsCapped = parsedSignals;
       osmRoadsRef.current = roadsCapped;
       osmSignalsRef.current = signalsCapped;
       turnRestrictionsRef.current = parsedRestrictions;
