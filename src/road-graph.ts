@@ -49,6 +49,7 @@ export type RoadNetwork = {
   edges: NetworkEdge[];
   intersections: NetworkNode[];
   laneLines: Array<{ id: string; roadId: number; laneIndex: number; direction: 1 | -1; geometry: Position[] }>;
+  laneBoundaries: Array<{ id: string; roadId: number; direction: 1 | -1; outer: boolean; geometry: Position[] }>;
   stats: { roads: number; nodes: number; intersections: number; directedEdges: number; laneCount: number; connectedComponents: number };
 };
 
@@ -123,6 +124,7 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
   const nodeMap = new Map<string, { coordinate: Position; roadIds: Set<number>; neighbours: Set<string> }>();
   const edges: NetworkEdge[] = [];
   const laneLines: RoadNetwork['laneLines'] = [];
+  const laneBoundaries: RoadNetwork['laneBoundaries'] = [];
   const validRoads = roads.filter((road) => road.coordinates.length >= 2);
   const addNode = (id: string, coordinate: Position, roadId: number) => {
     let node = nodeMap.get(id);
@@ -158,6 +160,10 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
         const laneOffset = baseOffset + (lane - (count - 1) / 2) * 3.25;
         laneLines.push({ id: road.id + ':lane:' + laneStart + lane, roadId: road.id, laneIndex: lane, direction, geometry: offsetLine(line, laneOffset) });
       }
+      for (let boundary = 0; boundary <= count; boundary++) {
+        const boundaryOffset = baseOffset + (boundary - count / 2) * 3.25;
+        laneBoundaries.push({ id: road.id + ':boundary:' + direction + ':' + boundary, roadId: road.id, direction, outer: boundary === 0 || boundary === count, geometry: offsetLine(line, boundaryOffset) });
+      }
     };
     if (forwardLanes > 0) addLaneLines(coords, forwardLanes, reverseLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0, 1, 0);
     if (reverseLanes > 0) addLaneLines([...coords].reverse(), reverseLanes, forwardLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0, -1, forwardLanes);
@@ -185,7 +191,7 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
   }
   const intersections = nodes.filter((node) => node.intersection);
   return {
-    nodes, edges, intersections, laneLines,
+    nodes, edges, intersections, laneLines, laneBoundaries,
     stats: { roads: validRoads.length, nodes: nodes.length, intersections: intersections.length, directedEdges: edges.length, laneCount: laneLines.length, connectedComponents }
   };
 }
@@ -203,10 +209,10 @@ export function networkNodeCollection(network: RoadNetwork) {
 export function laneLineCollection(network: RoadNetwork) {
   return {
     type: 'FeatureCollection' as const,
-    features: network.laneLines.map((lane) => ({
-      type: 'Feature' as const, id: lane.id,
-      geometry: { type: 'LineString' as const, coordinates: lane.geometry },
-      properties: { id: lane.id, roadId: lane.roadId, laneIndex: lane.laneIndex, direction: lane.direction }
+    features: network.laneBoundaries.map((boundary) => ({
+      type: 'Feature' as const, id: boundary.id,
+      geometry: { type: 'LineString' as const, coordinates: boundary.geometry },
+      properties: { id: boundary.id, roadId: boundary.roadId, direction: boundary.direction, outer: boundary.outer }
     }))
   };
 }
