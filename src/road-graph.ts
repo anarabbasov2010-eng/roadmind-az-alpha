@@ -41,6 +41,7 @@ export type NetworkEdge = {
   lengthMeters: number;
   geometry: Position[];
   oneWay: boolean;
+  carriagewayOffsetMeters: number;
 };
 export type RoadNetwork = {
   nodes: NetworkNode[];
@@ -146,21 +147,21 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
       const forwardLanes = directional.forward;
       const reverseLanes = directional.backward;
       const edgeId = road.id + ':' + i;
-      if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay });
-      if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseOnly ? lanes : reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay });
+      const forwardOffset = reverseLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0;
+      const backwardOffset = forwardLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0;
+      if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay, carriagewayOffsetMeters: forwardOffset });
+      if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseOnly ? lanes : reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay, carriagewayOffsetMeters: backwardOffset });
     }
-    // Render each mapped lane as a separate centerline. Missing OSM lane tags are estimates, not survey data.
-    const forwardLanes = directional.forward;
-    const reverseLanes = directional.backward;
-    const total = forwardLanes + reverseLanes;
-    for (let lane = 0; lane < total; lane++) {
-      const reverse = reverseOnly || (!oneWay && lane >= forwardLanes);
-      const localIndex = reverse ? lane - forwardLanes : lane;
-      const count = reverse ? reverseLanes : forwardLanes;
-      const signedOffset = oneWay ? (localIndex - (count - 1) / 2) * 3.25 : -((count / 2) - localIndex - 0.5) * 3.25;
-      const geometry = offsetLine(reverse ? [...coords].reverse() : coords, signedOffset);
-      laneLines.push({ id: road.id + ':lane:' + lane, roadId: road.id, laneIndex: lane, direction: reverse ? -1 : 1, geometry });
-    }
+    // Draw each lane center independently, offsetting opposing carriageways to their proper sides.
+    const addLaneLines = (line: Position[], count: number, baseOffset: number, direction: 1 | -1, laneStart: number) => {
+      for (let lane = 0; lane < count; lane++) {
+        const laneOffset = baseOffset + (lane - (count - 1) / 2) * 3.25;
+        laneLines.push({ id: road.id + ':lane:' + laneStart + lane, roadId: road.id, laneIndex: lane, direction, geometry: offsetLine(line, laneOffset) });
+      }
+    };
+    if (forwardLanes > 0) addLaneLines(coords, forwardLanes, reverseLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0, 1, 0);
+    if (reverseLanes > 0) addLaneLines([...coords].reverse(), reverseLanes, forwardLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0, -1, forwardLanes);
+
   }
   const nodes: NetworkNode[] = Array.from(nodeMap.entries()).map(([id, node]) => ({
     id, coordinate: node.coordinate, roadIds: Array.from(node.roadIds), degree: node.neighbours.size,
