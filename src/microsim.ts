@@ -22,7 +22,7 @@ export type MicroConfig = {
   standstillGapMeters: number; maxAccelerationMps2: number; comfortableDecelerationMps2: number;
   emergencyDecelerationMps2: number; reactionTimeSeconds: number; seed: number;
 };
-export type TurnRestriction = { fromWayId: number; toWayId: number; viaNodeId: string; restriction: string };
+export type TurnRestriction = { fromWayId: number; toWayId: number; viaNodeId: string; restriction: string; fromDirection?: 1 | -1; toDirection?: 1 | -1 };
 export type MicroNetwork = {
   source: RoadNetwork; movements: Movement[]; movementsByIncomingEdge: Map<string, Movement[]>;
   controllers: Map<string, JunctionController>; edgesById: Map<string, NetworkEdge>; outgoingByNode: Map<string, NetworkEdge[]>;
@@ -111,10 +111,11 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
   for (const [nodeId, ins] of incoming) {
     for (const from of ins) for (const to of outgoing.get(nodeId) || []) {
       if (from.id === to.id || (from.roadId === to.roadId && from.from === to.to)) continue;
-      const nodeRestrictions = restrictions.filter((restriction) => restriction.viaNodeId === nodeId && restriction.fromWayId === from.roadId);
-      const onlyRestrictions = nodeRestrictions.filter((restriction) => restriction.restriction.startsWith('only_'));
+      const nodeRestrictions = restrictions.filter((restriction) => restriction.viaNodeId === nodeId && restriction.fromWayId === from.roadId && (restriction.fromDirection === undefined || restriction.fromDirection === from.direction));
+      const applicableRestrictions = nodeRestrictions.filter((restriction) => restriction.toDirection === undefined || restriction.toDirection === to.direction);
+      const onlyRestrictions = applicableRestrictions.filter((restriction) => restriction.restriction.startsWith('only_'));
       if (onlyRestrictions.length && !onlyRestrictions.some((restriction) => restriction.toWayId === to.roadId)) continue;
-      if (nodeRestrictions.some((restriction) => restriction.toWayId === to.roadId && restriction.restriction.startsWith('no_'))) continue;
+      if (applicableRestrictions.some((restriction) => restriction.toWayId === to.roadId && restriction.restriction.startsWith('no_'))) continue;
       const kind = classifyTurn(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]));
       if (Math.abs(deltaAngle(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]))) > 150 && (outgoing.get(nodeId) || []).length > 1) continue;
       const countIn = laneCount(from), countOut = laneCount(to);
