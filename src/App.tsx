@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Eye, Gauge, GitCompareArrows, LocateFixed,
@@ -15,7 +16,7 @@ import {
 type ToolMode = 'select' | 'signal' | 'road' | 'erase';
 type RoadDraft = { id: string; name: string; coordinates: Position[]; lanes: number };
 type OSMRoad = { id: number; name: string; highway: string; coordinates: Position[]; lanes?: string; maxspeed?: string; oneway?: string };
-type OSMSignal = { id: number; name: string; coordinates: Position[]; direction?: string };
+type OSMSignal = { id: number; name: string; coordinates: Position; direction?: string };
 type GeoFeature = {
   type: 'Feature';
   id?: string | number;
@@ -78,11 +79,11 @@ function roadCollection(roads: RoadDraft[]): FeatureCollection {
   };
 }
 
-function carIcon(color: string): HTMLCanvasElement {
+function carIcon(color: string): ImageData {
   const canvas = document.createElement('canvas');
   canvas.width = 48; canvas.height = 28;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
+  if (!ctx) return new ImageData(48, 28);
   ctx.fillStyle = '#101716';
   ctx.beginPath(); ctx.roundRect(5, 2, 38, 24, 7); ctx.fill();
   ctx.fillStyle = color;
@@ -93,7 +94,7 @@ function carIcon(color: string): HTMLCanvasElement {
   ctx.beginPath(); ctx.roundRect(13, 16, 22, 5, 2); ctx.fill();
   ctx.fillStyle = '#13201e';
   ctx.fillRect(4, 6, 5, 5); ctx.fillRect(39, 6, 5, 5); ctx.fillRect(4, 18, 5, 5); ctx.fillRect(39, 18, 5, 5);
-  return canvas;
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 function carsCollection(state: TrafficState): FeatureCollection {
@@ -412,7 +413,7 @@ export default function App() {
       }
     });
     map.on('zoomend', () => setMapZoom(map.getZoom()));
-    map.on('error', (event) => console.debug('Map service event:', event.error?.message || ''));
+    map.on('error', (event: { error?: Error }) => console.debug('Map service event:', event.error?.message || ''));
     map.on('moveend', () => {
       if (map.getZoom() < 12.5 || osmBusy) return;
       if (lastAutoTimerRef.current !== null) window.clearTimeout(lastAutoTimerRef.current);
