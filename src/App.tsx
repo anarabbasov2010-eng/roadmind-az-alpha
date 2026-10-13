@@ -170,6 +170,20 @@ function importedSignalCollection(signals: OSMSignal[], network?: MicroNetwork |
   };
 }
 
+function microMetricsFor(state: MicroState): TrafficMetrics {
+  const count = Math.max(1, state.vehicles.length);
+  const stopped = state.vehicles.filter((vehicle) => vehicle.speedMps < 0.15).length;
+  const averageSpeed = state.vehicles.reduce((total, vehicle) => total + vehicle.speedMps * 3.6, 0) / count;
+  const hours = Math.max(1 / 3600, state.timeSeconds / 3600);
+  return {
+    averageSpeed: Math.round(averageSpeed),
+    stopped,
+    queueMeters: Math.round(stopped * 6.5),
+    delaySeconds: Math.round(state.vehicles.reduce((total, vehicle) => total + vehicle.delaySeconds, 0) / count),
+    throughput: Math.round(state.completedTrips / hours)
+  };
+}
+
 function downloadTextFile(filename: string, content: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -424,7 +438,10 @@ export default function App() {
 
   const selectedSignal = signals.find((signal) => signal.id === selectedSignalId) || null;
   const selectedRoad = roads.find((road) => road.id === selectedRoadId) || null;
-  const metrics = useMemo(() => metricsFor(traffic), [traffic]);
+  const metrics = useMemo(() => {
+    const micro = microStateRef.current;
+    return micro && micro.vehicles.length ? microMetricsFor(micro) : metricsFor(traffic);
+  }, [traffic]);
   const speedDelta = comparison ? comparison.current.averageSpeed - comparison.baseline.averageSpeed : null;
   const queueDelta = comparison ? comparison.baseline.queueMeters - comparison.current.queueMeters : null;
 
@@ -823,7 +840,8 @@ export default function App() {
       trafficRef.current = next;
       setTraffic(next);
       if (Math.floor(next.time / 8) > Math.floor((next.time - 0.1 * speedMultiplier) / 8)) {
-        const value = metricsFor(next).queueMeters;
+        const currentMicro = microStateRef.current;
+        const value = currentMicro && currentMicro.vehicles.length ? microMetricsFor(currentMicro).queueMeters : metricsFor(next).queueMeters;
         setHistory((previous) => [...previous, value].slice(-30));
       }
     }, 100);
@@ -997,7 +1015,7 @@ export default function App() {
           <LayerToggle icon={<Waypoints size={15} />} label="OSM · дороги" detail={osmRoads.length ? osmRoads.length + ' геометрий загружено' : 'Загрузка по текущему району'} checked={showOsmRoads} onChange={setShowOsmRoads} />
           <LayerToggle icon={<RadioTower size={15} />} label="OSM · светофоры" detail={osmSignals.length ? osmSignals.length + ' отмечено в OSM' : 'Только размеченные объекты'} checked={showOsmSignals} onChange={setShowOsmSignals} />
           <LayerToggle icon={<Activity size={15} />} label="Тестовый маршрут" detail="Схематический · не дорожная сеть" checked={showDemo} onChange={setShowDemo} />
-          <LayerToggle icon={<CarFront size={15} />} label="Виртуальные авто" detail={traffic.vehicles.length + ' синтетических агентов'} checked={showCars} onChange={setShowCars} />
+          <LayerToggle icon={<CarFront size={15} />} label="Виртуальные авто" detail={microNetworkRef.current ? 'микросимуляция · ' + (microStateRef.current?.vehicles.length || 0) + ' агентов' : traffic.vehicles.length + ' демонстрационных агентов'} checked={showCars} onChange={setShowCars} />
           <LayerToggle icon={<TrafficCone size={15} />} label="Мои светофоры" detail={signals.length + ' объектов сценария'} checked={showUserSignals} onChange={setShowUserSignals} />
           <button className="sync-button" onClick={() => void syncOsm(false)} disabled={osmBusy}><RefreshCw size={14} className={osmBusy ? 'spin' : ''} />{osmBusy ? 'Синхронизация…' : 'Обновить данные района'}</button>
           <div className="engineering-tools">
