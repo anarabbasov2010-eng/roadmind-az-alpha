@@ -887,6 +887,36 @@ export default function App() {
     flashToast('Сценарий экспортирован в JSON.');
   };
 
+  const exportSignalPlans = () => {
+    const network = microNetworkRef.current;
+    if (!network || !network.controllers.size) {
+      flashToast('Сначала загрузите район OSM со светофорами.');
+      return;
+    }
+    downloadTextFile('roadmind-signal-plans.json', exportSignalPlanJson(network), 'application/json');
+    flashToast('Шаблон фаз экспортирован. Замените времена на подтверждённые данные контроллеров.');
+  };
+  const importSignalPlans = async (file: File) => {
+    const network = microNetworkRef.current;
+    if (!network) { flashToast('Сначала загрузите дорожную сеть OSM.'); return; }
+    const result = importSignalPlanJson(network, await file.text());
+    if (!result.ok) { flashToast(result.errors[0] || 'План не прошёл проверку.'); return; }
+    const state = microStateRef.current;
+    (mapRef.current?.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(osmSignals, network, state?.timeSeconds || 0) as never);
+    flashToast('Загружено фазовых планов: ' + result.updated + '. Проверка конфликтов пройдена.');
+  };
+  const importCalibration = async (file: File) => {
+    const samples = parseCalibrationCsv(await file.text());
+    if (!samples.length) {
+      flashToast('CSV не распознан. Нужны столбцы speed_kmh;flow_veh_per_hour;queue_meters.');
+      return;
+    }
+    const result = calibrateMicroConfig(samples, microConfigRef.current);
+    microConfigRef.current = result.config;
+    setSpeedLimit(Math.round(result.config.defaultSpeedKmh));
+    flashToast('Калибровка по ' + result.sampleCount + ' измерениям применена. RMSE скорости: ' + result.rmseSpeedKmh.toFixed(1) + ' км/ч.');
+  };
+
   const runComparison = () => {
     if (isComparing) return;
     setIsComparing(true);
@@ -951,6 +981,14 @@ export default function App() {
           <LayerToggle icon={<CarFront size={15} />} label="Виртуальные авто" detail={traffic.vehicles.length + ' синтетических агентов'} checked={showCars} onChange={setShowCars} />
           <LayerToggle icon={<TrafficCone size={15} />} label="Мои светофоры" detail={signals.length + ' объектов сценария'} checked={showUserSignals} onChange={setShowUserSignals} />
           <button className="sync-button" onClick={() => void syncOsm(false)} disabled={osmBusy}><RefreshCw size={14} className={osmBusy ? 'spin' : ''} />{osmBusy ? 'Синхронизация…' : 'Обновить данные района'}</button>
+          <div className="engineering-tools">
+            <div className="engineering-tools-title">Симуляция и данные</div>
+            <button onClick={exportSignalPlans}><Download size={13} />Экспорт фаз светофоров</button>
+            <button onClick={() => signalPlanInputRef.current?.click()}><RadioTower size={13} />Импорт программы фаз</button>
+            <button onClick={() => calibrationInputRef.current?.click()}><Activity size={13} />Калибровка по CSV</button>
+            <input ref={signalPlanInputRef} type="file" accept=".json,application/json" hidden onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) await importSignalPlans(file); }} />
+            <input ref={calibrationInputRef} type="file" accept=".csv,text/csv" hidden onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) await importCalibration(file); }} />
+          </div>
           <div className={'source-stamp ' + (osmStatus === 'error' ? 'warning' : '')}>
             <span className="source-indicator" /><div><strong>{osmStatus === 'error' ? 'OSM временно недоступен' : osmStatus === 'loading' ? 'Загрузка OSM…' : osmUpdatedAt ? 'OSM синхронизирован' : 'Данные OSM не запрошены'}</strong><small>{osmUpdatedAt ? 'Последний запрос · ' + formatTime(osmUpdatedAt) : 'Местные данные не подтверждены'}</small></div>
           </div>
