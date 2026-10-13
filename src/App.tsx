@@ -315,12 +315,23 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   map.addSource('rm-road-graph-nodes', { type: 'geojson', data: emptyCollection() as never });
   map.addLayer({
     id: 'rm-road-graph-lane-centres', type: 'line', source: 'rm-road-graph-lanes',
+    filter: ['==', ['get', 'outer'], false],
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
     paint: {
       'line-color': ['match', ['get', 'direction'], -1, '#d8dfd5', '#ffffff'],
       'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 16, 0.85, 19, 1.25],
       'line-opacity': 0.9,
       'line-dasharray': [3, 2.1]
+    }
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-road-graph-lane-edges', type: 'line', source: 'rm-road-graph-lanes',
+    filter: ['==', ['get', 'outer'], true],
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.55, 16, 1.05, 19, 1.55],
+      'line-opacity': 0.86
     }
   }, labelLayer);
   map.addLayer({
@@ -806,6 +817,7 @@ export default function App() {
     vis('rm-osm-road-markings', showOsmRoads);
     vis('rm-osm-lane-markings-line', showOsmRoads);
     vis('rm-road-graph-lane-centres', showOsmRoads);
+    vis('rm-road-graph-lane-edges', showOsmRoads);
     vis('rm-road-graph-intersections', showOsmRoads);
     vis('rm-osm-signal-halo', showOsmSignals);
     vis('rm-osm-signal-points', showOsmSignals);
