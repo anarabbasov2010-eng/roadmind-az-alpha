@@ -5,7 +5,7 @@ export type RoadInput = {
   name: string;
   highway: string;
   coordinates: Position[];
-  nodeRefs?: number[];
+  nodeRefs?: Array<number | undefined>;
   lanes?: string;
   lanesForward?: string;
   lanesBackward?: string;
@@ -276,6 +276,16 @@ export function nearestIntersectionNode(network: RoadNetwork, point: Position, m
   let nearest: NetworkNode | null = null;
   let nearestDistance = maxDistanceMeters;
   for (const node of network.intersections) {
+    const distance = distanceMeters(node.coordinate, point);
+    if (distance <= nearestDistance) { nearest = node; nearestDistance = distance; }
+  }
+  return nearest;
+}
+
+export function nearestRoadNode(network: RoadNetwork, point: Position, maxDistanceMeters = 20): NetworkNode | null {
+  let nearest: NetworkNode | null = null;
+  let nearestDistance = maxDistanceMeters;
+  for (const node of network.nodes) {
     const distance = distanceMeters(node.coordinate, point);
     if (distance <= nearestDistance) { nearest = node; nearestDistance = distance; }
   }
