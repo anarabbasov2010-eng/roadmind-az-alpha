@@ -14,7 +14,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "icons": "node scripts/generate-icons.cjs",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "dist:win": "npm run icons && npm run build && electron-builder --win nsis --x64"
+    "dist:win": "npm run icons && npm run build && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
