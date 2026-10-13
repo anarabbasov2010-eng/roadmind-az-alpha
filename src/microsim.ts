@@ -108,11 +108,16 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
     incoming.set(edge.to, [...(incoming.get(edge.to) || []), edge]);
     outgoing.set(edge.from, [...(outgoing.get(edge.from) || []), edge]);
   }
+  const restrictionIndex = new Map<string, TurnRestriction[]>();
+  for (const restriction of restrictions) {
+    const key = restriction.viaNodeId + '|' + restriction.fromWayId;
+    restrictionIndex.set(key, [...(restrictionIndex.get(key) || []), restriction]);
+  }
   const movements: Movement[] = [];
   for (const [nodeId, ins] of incoming) {
     for (const from of ins) for (const to of outgoing.get(nodeId) || []) {
       if (from.id === to.id || (from.roadId === to.roadId && from.from === to.to)) continue;
-      const nodeRestrictions = restrictions.filter((restriction) => restriction.viaNodeId === nodeId && restriction.fromWayId === from.roadId && (restriction.fromDirection === undefined || restriction.fromDirection === from.direction));
+      const nodeRestrictions = (restrictionIndex.get(nodeId + '|' + from.roadId) || []).filter((restriction) => restriction.fromDirection === undefined || restriction.fromDirection === from.direction);
       const applicableRestrictions = nodeRestrictions.filter((restriction) => restriction.toDirection === undefined || restriction.toDirection === to.direction);
       const onlyRestrictions = applicableRestrictions.filter((restriction) => restriction.restriction.startsWith('only_'));
       if (onlyRestrictions.length && !onlyRestrictions.some((restriction) => restriction.toWayId === to.roadId)) continue;
