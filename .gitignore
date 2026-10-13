@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+electron/roadmind.ico
+*.log
+.env
+.env.*
+!.env.example
+.vscode/
+.DS_Store
+*.tsbuildinfo
