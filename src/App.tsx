@@ -525,7 +525,7 @@ export default function App() {
       if (!payload || !Array.isArray(payload.elements)) throw lastError || new Error('Пустой ответ OpenStreetMap');
       const parsedRoads: OSMRoad[] = [];
       const parsedSignals: OSMSignal[] = [];
-      const parsedRestrictions: Array<{ fromWayId: number; toWayId: number; viaNodeId: string; restriction: string }> = [];
+      const parsedRestrictions: Array<{ fromWayId: number; toWayId: number; viaNodeId: string; restriction: string; fromDirection?: 1 | -1; toDirection?: 1 | -1 }> = [];
       for (const element of payload.elements) {
         if (element.type === 'way' && element.geometry && element.geometry.length > 1 && element.tags?.highway) {
           parsedRoads.push({
@@ -553,6 +553,17 @@ export default function App() {
             direction: element.tags.direction
           });
         }
+      }
+      const roadsById = new Map(parsedRoads.map((road) => [road.id, road]));
+      for (const restriction of parsedRestrictions) {
+        const viaId = Number(restriction.viaNodeId.slice(1));
+        const fromRefs = roadsById.get(restriction.fromWayId)?.nodeRefs || [];
+        const toRefs = roadsById.get(restriction.toWayId)?.nodeRefs || [];
+        const fromIndex = fromRefs.indexOf(viaId), toIndex = toRefs.indexOf(viaId);
+        if (fromIndex === fromRefs.length - 1) restriction.fromDirection = 1;
+        else if (fromIndex === 0) restriction.fromDirection = -1;
+        if (toIndex === 0) restriction.toDirection = 1;
+        else if (toIndex === toRefs.length - 1) restriction.toDirection = -1;
       }
       const roadsCapped = parsedRoads.slice(0, 6000);
       const signalsCapped = parsedSignals.slice(0, 2000);
