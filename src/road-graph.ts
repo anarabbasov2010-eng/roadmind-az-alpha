@@ -115,6 +115,7 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
     ids.forEach((id, i) => addNode(id, coords[i], road.id));
     const lanes = laneCount(road);
     const oneWay = isOneway(road);
+    const reverseOnly = (road.oneway || '').toLowerCase() === '-1';
     for (let i = 0; i < coords.length - 1; i++) {
       const a = coords[i], b = coords[i + 1], from = ids[i], to = ids[i + 1];
       const length = distanceMeters(a, b);
@@ -124,15 +125,15 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
       const forwardLanes = oneWay ? lanes : Math.max(1, Math.ceil(lanes / 2));
       const reverseLanes = oneWay ? 0 : Math.max(1, Math.floor(lanes / 2));
       const edgeId = road.id + ':' + i;
-      edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay });
-      if (!oneWay) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay });
+      if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay });
+      if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, direction: -1, lanes: reverseOnly ? lanes : reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay });
     }
     // Render each mapped lane as a separate centerline. Missing OSM lane tags are estimates, not survey data.
-    const forwardLanes = oneWay ? lanes : Math.max(1, Math.ceil(lanes / 2));
-    const reverseLanes = oneWay ? 0 : Math.max(1, Math.floor(lanes / 2));
+    const forwardLanes = oneWay ? (reverseOnly ? 0 : lanes) : Math.max(1, Math.ceil(lanes / 2));
+    const reverseLanes = oneWay ? (reverseOnly ? lanes : 0) : Math.max(1, Math.floor(lanes / 2));
     const total = forwardLanes + reverseLanes;
     for (let lane = 0; lane < total; lane++) {
-      const reverse = !oneWay && lane >= forwardLanes;
+      const reverse = reverseOnly || (!oneWay && lane >= forwardLanes);
       const localIndex = reverse ? lane - forwardLanes : lane;
       const count = reverse ? reverseLanes : forwardLanes;
       const signedOffset = oneWay ? (localIndex - (count - 1) / 2) * 3.25 : -((count / 2) - localIndex - 0.5) * 3.25;
