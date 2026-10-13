@@ -271,8 +271,12 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
   for (const list of occupancy.values()) list.sort((a, b) => b.distanceOnEdge - a.distanceOnEdge);
   const occupiedMovements = new Set<string>(vehicles.map((vehicle) => vehicle.activeMovementId).filter((id): id is string => Boolean(id)));
   let completedTrips = state.completedTrips, totalDelaySeconds = state.totalDelaySeconds;
-  for (let index = 0; index < vehicles.length; index++) {
-    const vehicle = vehicles[index];
+  const updateOrder = [...vehicles].sort((a, b) => {
+    const aKey = a.activeMovementId ? '~' + a.activeMovementId : a.routeEdgeIds[a.routeIndex] + ':' + a.laneIndex;
+    const bKey = b.activeMovementId ? '~' + b.activeMovementId : b.routeEdgeIds[b.routeIndex] + ':' + b.laneIndex;
+    return aKey.localeCompare(bKey) || b.distanceOnEdge - a.distanceOnEdge;
+  });
+  for (const vehicle of updateOrder) {
     if (vehicle.activeMovementId) {
       const movement = net.movements.find((item) => item.id === vehicle.activeMovementId);
       if (!movement) { vehicle.activeMovementId = null; vehicle.connectorDistance = 0; continue; }
@@ -319,6 +323,14 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     vehicle.speedMps = Math.max(0, vehicle.speedMps + acceleration * dt);
     vehicle.accelerationMps2 = acceleration;
     vehicle.distanceOnEdge = Math.min(edgeLen(edge), vehicle.distanceOnEdge + vehicle.speedMps * dt);
+    if (leaderIndex > 0) {
+      const leader = leaders[leaderIndex - 1];
+      const safePosition = Math.max(0, leader.distanceOnEdge - 4.8);
+      if (vehicle.distanceOnEdge > safePosition) {
+        vehicle.distanceOnEdge = safePosition;
+        vehicle.speedMps = Math.min(vehicle.speedMps, leader.speedMps);
+      }
+    }
     if (vehicle.speedMps < 0.15) { vehicle.stoppedSeconds += dt; vehicle.delaySeconds += dt; totalDelaySeconds += dt; }
     if (vehicle.distanceOnEdge >= edgeLen(edge) - 0.05) {
       if (isLast) {
