@@ -660,6 +660,9 @@ export default function App() {
       }
       const roadsCapped = parsedRoads.slice(0, 6000);
       const signalsCapped = parsedSignals.slice(0, 2000);
+      osmRoadsRef.current = roadsCapped;
+      osmSignalsRef.current = signalsCapped;
+      turnRestrictionsRef.current = parsedRestrictions;
       setOsmRoads(roadsCapped);
       setOsmSignals(signalsCapped);
       setOsmUpdatedAt(new Date());
@@ -670,58 +673,9 @@ export default function App() {
       roadSource?.setData(importedRoadCollection(roadsCapped) as never);
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
-      const network = buildRoadNetwork(roadsCapped);
-      const signalNodeIds = new Set(signalsCapped.map((signal) => 'n' + signal.id));
-      const scenarioNodeMap = new Map<string, string>();
-      for (const signal of signalsRef.current) {
-        const node = nearestIntersectionNode(network, signal.coordinates, 45);
-        if (node) { scenarioNodeMap.set(signal.id, node.id); signalNodeIds.add(node.id); }
-      }
-      scenarioSignalNodeMapRef.current = scenarioNodeMap;
-      const microNetwork = buildMicroNetwork(network, signalNodeIds, parsedRestrictions);
-      for (const signal of signalsRef.current) {
-        const nodeId = scenarioNodeMap.get(signal.id);
-        if (nodeId) configureScenarioSignal(microNetwork, nodeId, signal);
-      }
-      microConfigRef.current = { ...microConfigRef.current, defaultSpeedKmh: speedLimit };
-      const microState = createMicroState(microNetwork, microConfigRef.current);
-      microNetworkRef.current = microNetwork;
-      microStateRef.current = microState;
-      (map.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(signalsCapped, microNetwork, microState.timeSeconds) as never);
-      const route = buildClosedSimulationRoute(network);
-      if (route && route.length >= 4) {
-        simulationRouteRef.current = route;
-        simulationRouteLengthKmRef.current = Math.max(0.05, routeLengthMeters(route) / 1000);
-        const routedSignals = signalsRef.current.map((signal) => ({
-          ...signal,
-          progress: progressForCoordinate(route, signal.coordinates),
-          connectedToDemoRoute: distanceToRouteMeters(route, signal.coordinates) <= 55
-        }));
-        signalsRef.current = routedSignals;
-        setSignals(routedSignals);
-        (map.getSource('rm-simulation-route') as GeoJSONSource | undefined)?.setData({
-          type: 'FeatureCollection',
-          features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: route }, properties: { kind: 'imported-street-cycle', lengthKm: simulationRouteLengthKmRef.current } }]
-        } as never);
-        (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(trafficRef.current, route) as never);
-      } else {
-        simulationRouteRef.current = DEMO_ROUTE;
-        simulationRouteLengthKmRef.current = 2.6;
-        const fallbackSignals = signalsRef.current.map((signal) => ({
-          ...signal,
-          progress: progressForCoordinate(DEMO_ROUTE, signal.coordinates),
-          connectedToDemoRoute: distanceToRouteMeters(DEMO_ROUTE, signal.coordinates) <= 55
-        }));
-        signalsRef.current = fallbackSignals;
-        setSignals(fallbackSignals);
-        (map.getSource('rm-simulation-route') as GeoJSONSource | undefined)?.setData(emptyCollection() as never);
-        (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(trafficRef.current, DEMO_ROUTE) as never);
-      }
-      (map.getSource('rm-road-graph-lanes') as GeoJSONSource | undefined)?.setData(laneLineCollection(network) as never);
-      (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, microState) as never);
-      (map.getSource('rm-road-graph-nodes') as GeoJSONSource | undefined)?.setData(networkNodeCollection(network) as never);
-      const signalSource = map.getSource('rm-osm-signals') as GeoJSONSource | undefined;
-      signalSource?.setData(importedSignalCollection(signalsCapped) as never);
+      const rebuilt = rebuildMicroNetwork(roadsRef.current, roadsCapped, signalsCapped, parsedRestrictions);
+      if (!rebuilt) throw new Error('Road graph did not initialize');
+      const { network, microNetwork } = rebuilt;
       if (!automatic) flashToast('Сеть OSM: ' + network.stats.roads + ' дорог · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос · ' + microNetwork.stats.movements + ' манёвров · ' + microNetwork.stats.conflicts + ' конфликтов · ' + microNetwork.stats.controlledJunctions + ' узлов со светофорами · ' + parsedRestrictions.length + ' ограничений поворота.');
     } catch (error) {
       setOsmStatus('error');
