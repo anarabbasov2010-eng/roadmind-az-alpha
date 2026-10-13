@@ -22,6 +22,7 @@ export type MicroConfig = {
   standstillGapMeters: number; maxAccelerationMps2: number; comfortableDecelerationMps2: number;
   emergencyDecelerationMps2: number; reactionTimeSeconds: number; seed: number;
 };
+export type TurnRestriction = { fromWayId: number; toWayId: number; viaNodeId: string; restriction: string };
 export type MicroNetwork = {
   source: RoadNetwork; movements: Movement[]; movementsByIncomingEdge: Map<string, Movement[]>;
   controllers: Map<string, JunctionController>; edgesById: Map<string, NetworkEdge>; outgoingByNode: Map<string, NetworkEdge[]>;
@@ -76,7 +77,7 @@ function connector(from: NetworkEdge, to: NetworkEdge, kind: TurnKind, fromLane:
       u ** 3 * startPoint[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t ** 3 * endPoint[1]
     ]);
   }
-  return { geometry, exitDistanceMeters: distance(node, mix(node, next, 0.24)) };
+  return { geometry, exitDistanceMeters: distance(toNode, endPoint) };
 }
 function lineCross(a: Position, b: Position, c: Position, d: Position): boolean {
   const orient = (p: Position, q: Position, r: Position) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
@@ -86,9 +87,20 @@ function conflicts(a: Position[], b: Position[]): boolean {
   for (let i = 1; i < a.length; i++) for (let j = 1; j < b.length; j++) if (lineCross(a[i - 1], a[i], b[j - 1], b[j])) return true;
   return false;
 }
+function laneTurnAllowed(turn: TurnKind, lane: number, count: number, tags: string): boolean {
+  const lanes = tags.split('|');
+  const options = (lanes[count - 1 - lane] || '').split(';').map((value) => value.trim().toLowerCase());
+  if (!options.length || !options[0]) return true;
+  return options.some((value) =>
+    value === 'through' && turn === 'through' ||
+    ['left', 'slight_left', 'sharp_left', 'merge_to_left'].includes(value) && turn === 'left' ||
+    ['right', 'slight_right', 'sharp_right', 'merge_to_right'].includes(value) && turn === 'right' ||
+    ['reverse', 'uturn'].includes(value) && turn === 'left'
+  );
+}
 function laneCount(edge: NetworkEdge): number { return clamp(Math.floor(edge.lanes || 1), 1, 8); }
 
-export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<string>): MicroNetwork {
+export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<string>, restrictions: TurnRestriction[] = []): MicroNetwork {
   const incoming = new Map<string, NetworkEdge[]>(), outgoing = new Map<string, NetworkEdge[]>();
   const edgesById = new Map(network.edges.map((edge) => [edge.id, edge]));
   for (const edge of network.edges) {
@@ -99,12 +111,16 @@ export function buildMicroNetwork(network: RoadNetwork, signalNodeIds?: Set<stri
   for (const [nodeId, ins] of incoming) {
     for (const from of ins) for (const to of outgoing.get(nodeId) || []) {
       if (from.id === to.id || (from.roadId === to.roadId && from.from === to.to)) continue;
+      const nodeRestrictions = restrictions.filter((restriction) => restriction.viaNodeId === nodeId && restriction.fromWayId === from.roadId);
+      const onlyRestrictions = nodeRestrictions.filter((restriction) => restriction.restriction.startsWith('only_'));
+      if (onlyRestrictions.length && !onlyRestrictions.some((restriction) => restriction.toWayId === to.roadId)) continue;
+      if (nodeRestrictions.some((restriction) => restriction.toWayId === to.roadId && restriction.restriction.startsWith('no_'))) continue;
       const kind = classifyTurn(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]));
       if (Math.abs(deltaAngle(bearingDegrees(from.geometry[0], from.geometry[from.geometry.length - 1]), bearingDegrees(to.geometry[0], to.geometry[to.geometry.length - 1]))) > 150 && (outgoing.get(nodeId) || []).length > 1) continue;
       const countIn = laneCount(from), countOut = laneCount(to);
       const lanePairs: Array<[number, number]> = [];
       for (let lane = 0; lane < countIn; lane++) {
-        // Without mapped turn:lanes tags, all lanes are provisionally permissive.
+        if (from.turnLanes && !laneTurnAllowed(kind, lane, countIn, from.turnLanes)) continue;
         const toLane = kind === 'left' ? Math.min(countOut - 1, lane) : kind === 'right' ? Math.max(0, countOut - countIn + lane) : clamp(lane, 0, countOut - 1);
         lanePairs.push([lane, toLane]);
       }
