@@ -147,8 +147,8 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
       nodeMap.get(from)!.neighbours.add(to);
       nodeMap.get(to)!.neighbours.add(from);
       const edgeId = road.id + ':' + i;
-      const forwardOffset = reverseLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0;
-      const backwardOffset = forwardLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0;
+      const forwardOffset = reverseLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0;
+      const backwardOffset = forwardLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0;
       if (!reverseOnly) edges.push({ id: edgeId + ':f', from, to, roadId: road.id, roadName: road.name, roadClass: road.highway, turnLanes: road.turnLanesForward, direction: 1, lanes: forwardLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [a, b], oneWay, carriagewayOffsetMeters: forwardOffset });
       if (!oneWay || reverseOnly) edges.push({ id: edgeId + ':r', from: to, to: from, roadId: road.id, roadName: road.name, roadClass: road.highway, turnLanes: road.turnLanesBackward, direction: -1, lanes: reverseLanes, speedKmh: roadSpeed(road), lengthMeters: length, geometry: [b, a], oneWay, carriagewayOffsetMeters: backwardOffset });
     }
@@ -159,8 +159,8 @@ export function buildRoadNetwork(roads: RoadInput[]): RoadNetwork {
         laneLines.push({ id: road.id + ':lane:' + laneStart + lane, roadId: road.id, laneIndex: lane, direction, geometry: offsetLine(line, laneOffset) });
       }
     };
-    if (forwardLanes > 0) addLaneLines(coords, forwardLanes, reverseLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0, 1, 0);
-    if (reverseLanes > 0) addLaneLines([...coords].reverse(), reverseLanes, forwardLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0, -1, forwardLanes);
+    if (forwardLanes > 0) addLaneLines(coords, forwardLanes, reverseLanes > 0 ? -(forwardLanes * 3.25) / 2 : 0, 1, 0);
+    if (reverseLanes > 0) addLaneLines([...coords].reverse(), reverseLanes, forwardLanes > 0 ? -(reverseLanes * 3.25) / 2 : 0, -1, forwardLanes);
 
   }
   const nodes: NetworkNode[] = Array.from(nodeMap.entries()).map(([id, node]) => ({
