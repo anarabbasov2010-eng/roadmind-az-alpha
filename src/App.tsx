@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
+import { buildRoadNetwork, laneLineCollection, networkNodeCollection, type RoadInput } from './road-graph';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
@@ -15,7 +16,7 @@ import {
 
 type ToolMode = 'select' | 'signal' | 'road' | 'erase';
 type RoadDraft = { id: string; name: string; coordinates: Position[]; lanes: number };
-type OSMRoad = { id: number; name: string; highway: string; coordinates: Position[]; lanes?: string; maxspeed?: string; oneway?: string };
+type OSMRoad = RoadInput;
 type OSMSignal = { id: number; name: string; coordinates: Position; direction?: string };
 type GeoFeature = {
   type: 'Feature';
@@ -277,6 +278,27 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     }
   }, labelLayer);
   map.addSource('rm-osm-lane-markings', { type: 'geojson', data: emptyCollection() as never });
+  map.addSource('rm-road-graph-lanes', { type: 'geojson', data: emptyCollection() as never });
+  map.addSource('rm-road-graph-nodes', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({
+    id: 'rm-road-graph-lane-centres', type: 'line', source: 'rm-road-graph-lanes',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: {
+      'line-color': ['match', ['get', 'direction'], -1, '#d8dfd5', '#ffffff'],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 16, 0.85, 19, 1.25],
+      'line-opacity': 0.9,
+      'line-dasharray': [3, 2.1]
+    }
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-road-graph-intersections', type: 'circle', source: 'rm-road-graph-nodes',
+    filter: ['==', ['get', 'intersection'], true],
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 1.4, 16, 3.2, 19, 4.5],
+      'circle-color': '#6b8e76', 'circle-opacity': 0.76,
+      'circle-stroke-color': '#ffffff', 'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 12, 0.4, 17, 1.2]
+    }
+  }, labelLayer);
   map.addLayer({
     id: 'rm-osm-lane-markings-line', type: 'line', source: 'rm-osm-lane-markings',
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
@@ -453,11 +475,11 @@ export default function App() {
       const north = (center.lat + halfLat).toFixed(5);
       const east = (center.lng + halfLon).toFixed(5);
       const query = '[out:json][timeout:25];(' +
-        'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|busway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|busway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|residential_link|living_street|pedestrian)$"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'node["highway"="traffic_signals"](' + south + ',' + west + ',' + north + ',' + east + ');' +
-        ');out geom;';
+        ');out body geom;';
       const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-      let payload: { elements?: Array<{ type: string; id: number; tags?: Record<string, string>; geometry?: Array<{ lon: number; lat: number }>; lat?: number; lon?: number }> } | null = null;
+      let payload: { elements?: Array<{ type: string; id: number; tags?: Record<string, string>; geometry?: Array<{ lon: number; lat: number }>; nodes?: number[]; lat?: number; lon?: number }> } | null = null;
       let lastError: Error | null = null;
       for (const endpoint of endpoints) {
         try {
@@ -479,7 +501,10 @@ export default function App() {
             id: element.id, name: element.tags.name || element.tags.ref || element.tags.highway,
             highway: element.tags.highway,
             coordinates: element.geometry.map((point) => [point.lon, point.lat] as Position),
-            lanes: element.tags.lanes, maxspeed: element.tags.maxspeed, oneway: element.tags.oneway
+            nodeRefs: element.nodes,
+            lanes: element.tags.lanes, maxspeed: element.tags.maxspeed, oneway: element.tags.oneway,
+            surface: element.tags.surface, width: element.tags.width, access: element.tags.access,
+            junction: element.tags.junction, bridge: element.tags.bridge, tunnel: element.tags.tunnel
           });
         }
         if (element.type === 'node' && element.tags?.highway === 'traffic_signals' && typeof element.lat === 'number' && Number.isFinite(element.lat) && typeof element.lon === 'number' && Number.isFinite(element.lon)) {
@@ -502,9 +527,12 @@ export default function App() {
       roadSource?.setData(importedRoadCollection(roadsCapped) as never);
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
+      const network = buildRoadNetwork(roadsCapped);
+      (map.getSource('rm-road-graph-lanes') as GeoJSONSource | undefined)?.setData(laneLineCollection(network) as never);
+      (map.getSource('rm-road-graph-nodes') as GeoJSONSource | undefined)?.setData(networkNodeCollection(network) as never);
       const signalSource = map.getSource('rm-osm-signals') as GeoJSONSource | undefined;
       signalSource?.setData(importedSignalCollection(signalsCapped) as never);
-      if (!automatic) flashToast('OpenStreetMap: ' + roadsCapped.length + ' дорог и ' + signalsCapped.length + ' отмеченных светофоров загружено.');
+      if (!automatic) flashToast('OSM: ' + network.stats.roads + ' дорог · ' + network.stats.nodes + ' узлов · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' геометрий полос.');
     } catch (error) {
       setOsmStatus('error');
       if (!automatic) flashToast('Не удалось обновить OSM. Проверьте интернет или повторите позже.');
@@ -670,6 +698,8 @@ export default function App() {
     vis('rm-osm-roads-line', showOsmRoads);
     vis('rm-osm-road-markings', showOsmRoads);
     vis('rm-osm-lane-markings-line', showOsmRoads);
+    vis('rm-road-graph-lane-centres', showOsmRoads);
+    vis('rm-road-graph-intersections', showOsmRoads);
     vis('rm-osm-signal-halo', showOsmSignals);
     vis('rm-osm-signal-points', showOsmSignals);
     vis('rm-demo-casing', showDemo);
