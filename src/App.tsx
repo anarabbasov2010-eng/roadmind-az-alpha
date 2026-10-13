@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, nearestIntersectionNode, type RoadInput } from './road-graph';
-import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, signalStateAt, configureScenarioSignal, ensureJunctionController, importSignalPlanJson, exportSignalPlanJson, parseCalibrationCsv, calibrateMicroConfig, type MicroNetwork, type MicroState } from './microsim';
+import { buildMicroNetwork, createMicroState, DEFAULT_MICRO_CONFIG, microVehicleCollection, stepMicroSimulation, signalStateAt, configureScenarioSignal, ensureJunctionController, resetScenarioController, importSignalPlanJson, exportSignalPlanJson, parseCalibrationCsv, calibrateMicroConfig, type MicroNetwork, type MicroState } from './microsim';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
@@ -784,6 +784,7 @@ export default function App() {
       if (activeMode === 'erase') {
         if (hitUserSignals.length) {
           const id = String(hitUserSignals[0].properties?.id || '');
+          unbindScenarioSignal(id);
           setSignals((previous) => previous.filter((signal) => signal.id !== id));
           setSelectedSignalId(null);
           flashToast('Светофор сценария удалён.');
@@ -918,6 +919,14 @@ export default function App() {
     mapRef.current?.easeTo({ bearing, duration: 120, essential: true });
   };
 
+  const unbindScenarioSignal = (signalId: string) => {
+    const nodeId = scenarioSignalNodeMapRef.current.get(signalId);
+    scenarioSignalNodeMapRef.current.delete(signalId);
+    if (!nodeId || Array.from(scenarioSignalNodeMapRef.current.values()).includes(nodeId)) return;
+    const network = microNetworkRef.current;
+    if (network) resetScenarioController(network, nodeId);
+  };
+
   const changeMode = (next: ToolMode) => {
     pendingRoadRef.current = null;
     modeRef.current = next;
@@ -1008,7 +1017,19 @@ export default function App() {
     }, 25);
   };
   const resetScenario = () => {
+    for (const id of Array.from(scenarioSignalNodeMapRef.current.keys())) unbindScenarioSignal(id);
     const reset = initialSignals();
+    const network = microNetworkRef.current?.source;
+    if (network && microNetworkRef.current) {
+      for (const signal of reset) {
+        const node = nearestIntersectionNode(network, signal.coordinates, 45);
+        if (node) {
+          scenarioSignalNodeMapRef.current.set(signal.id, node.id);
+          ensureJunctionController(microNetworkRef.current, node.id);
+          configureScenarioSignal(microNetworkRef.current, node.id, signal);
+        }
+      }
+    }
     setSignals(reset); setRoads([]); setSpeedLimit(40);
     setSelectedSignalId(reset[0]?.id || null); setSelectedRoadId(null);
     setComparison(null); setHistory([]);
@@ -1132,7 +1153,7 @@ export default function App() {
               {!selectedSignal.connectedToDemoRoute && <p className="inline-warning">Объект не подключён к тестовому маршруту. Геометрическую сеть нужно связать перед использованием в симуляции.</p>}
               <div className="signal-control-heading"><span>Цикл светофора</span><strong>{selectedSignal.cycleSeconds} с</strong></div>
               <input className="range-input" type="range" min="30" max="140" step="5" value={selectedSignal.cycleSeconds} onChange={(event) => setSignalCycle(Number(event.target.value))} aria-label="Цикл светофора" />
-              <div className="signal-actions"><button onClick={toggleManualSignal}><RadioTower size={13} />{selectedSignal.manualState === 'red' ? 'Зелёный вручную' : selectedSignal.manualState === 'green' ? 'Вернуть цикл' : 'Красный вручную'}</button><button className="danger-icon" title="Удалить" onClick={() => { setSignals((previous) => previous.filter((item) => item.id !== selectedSignal.id)); setSelectedSignalId(null); }}><Eraser size={13} /></button></div>
+              <div className="signal-actions"><button onClick={toggleManualSignal}><RadioTower size={13} />{selectedSignal.manualState === 'red' ? 'Зелёный вручную' : selectedSignal.manualState === 'green' ? 'Вернуть цикл' : 'Красный вручную'}</button><button className="danger-icon" title="Удалить" onClick={() => { unbindScenarioSignal(selectedSignal.id); setSignals((previous) => previous.filter((item) => item.id !== selectedSignal.id)); setSelectedSignalId(null); }}><Eraser size={13} /></button></div>
             </div>}
           </section>
 
