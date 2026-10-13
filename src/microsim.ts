@@ -11,7 +11,7 @@ export type Movement = {
 export type SignalPhase = { id: string; name: string; movementIds: string[]; greenSeconds: number; yellowSeconds: number; allRedSeconds: number };
 export type JunctionController = { nodeId: string; cycleOffsetSeconds: number; phases: SignalPhase[] };
 export type MicroVehicle = {
-  id: number; routeEdgeIds: string[]; routeIndex: number; laneIndex: number;
+  id: number; routeEdgeIds: string[]; routeLaneIndices: number[]; routeIndex: number; laneIndex: number;
   distanceOnEdge: number; speedMps: number; accelerationMps2: number;
   stoppedSeconds: number; delaySeconds: number; activeMovementId: string | null;
   connectorDistance: number; completedTrips: number;
@@ -191,24 +191,29 @@ function randomFor(seed: number): () => number {
   let value = seed >>> 0;
   return () => { value = (Math.imul(1664525, value) + 1013904223) >>> 0; return value / 4294967296; };
 }
-function findRoute(net: MicroNetwork, startEdge: NetworkEdge, random: () => number): string[] {
-  const queue: Array<{ edge: NetworkEdge; path: string[]; length: number }> = [{ edge: startEdge, path: [startEdge.id], length: edgeLen(startEdge) }];
-  const visited = new Set([startEdge.id]);
-  const candidates: Array<{ path: string[]; length: number }> = [];
+function findRoute(net: MicroNetwork, startEdge: NetworkEdge, random: () => number, startLane = 0): { edgeIds: string[]; laneIndices: number[] } {
+  const firstLane = clamp(startLane, 0, laneCount(startEdge) - 1);
+  const queue: Array<{ edge: NetworkEdge; lane: number; edgeIds: string[]; laneIndices: number[]; length: number }> = [
+    { edge: startEdge, lane: firstLane, edgeIds: [startEdge.id], laneIndices: [firstLane], length: edgeLen(startEdge) }
+  ];
+  const visited = new Set([startEdge.id + ':' + firstLane]);
+  const candidates: Array<{ edgeIds: string[]; laneIndices: number[]; length: number }> = [];
   for (let i = 0; i < queue.length && i < 5000; i++) {
     const current = queue[i];
-    if (current.path.length >= 3 && current.length >= 250) candidates.push({ path: current.path, length: current.length });
-    if (current.path.length >= 18 || current.length > 5000) continue;
+    if (current.edgeIds.length >= 3 && current.length >= 250) candidates.push(current);
+    if (current.edgeIds.length >= 18 || current.length > 5000) continue;
     for (const movement of net.movementsByIncomingEdge.get(current.edge.id) || []) {
-      if (visited.has(movement.toEdgeId)) continue;
-      visited.add(movement.toEdgeId);
+      if (movement.fromLane !== current.lane) continue;
+      const key = movement.toEdgeId + ':' + movement.toLane;
+      if (visited.has(key)) continue;
+      visited.add(key);
       const edge = net.edgesById.get(movement.toEdgeId);
-      if (edge) queue.push({ edge, path: [...current.path, edge.id], length: current.length + edgeLen(edge) });
+      if (edge) queue.push({ edge, lane: movement.toLane, edgeIds: [...current.edgeIds, edge.id], laneIndices: [...current.laneIndices, movement.toLane], length: current.length + edgeLen(edge) });
     }
   }
-  if (!candidates.length) return [startEdge.id];
+  if (!candidates.length) return { edgeIds: [startEdge.id], laneIndices: [firstLane] };
   const selected = candidates[Math.floor(random() * candidates.length)];
-  return selected.path;
+  return { edgeIds: selected.edgeIds, laneIndices: selected.laneIndices };
 }
 export function createMicroState(net: MicroNetwork, config: MicroConfig = DEFAULT_MICRO_CONFIG): MicroState {
   const random = randomFor(config.seed);
@@ -217,9 +222,10 @@ export function createMicroState(net: MicroNetwork, config: MicroConfig = DEFAUL
   for (let i = 0; i < clamp(config.vehicleCount, 0, 500); i++) {
     if (!edges.length) break;
     const edge = edges[Math.floor(random() * edges.length)];
-    const route = findRoute(net, edge, random);
-    if (!route.length) continue;
-    vehicles.push({ id: i + 1, routeEdgeIds: route, routeIndex: 0, laneIndex: Math.floor(random() * laneCount(edge)),
+    const initialLane = Math.floor(random() * laneCount(edge));
+    const route = findRoute(net, edge, random, initialLane);
+    if (!route.edgeIds.length) continue;
+    vehicles.push({ id: i + 1, routeEdgeIds: route.edgeIds, routeLaneIndices: route.laneIndices, routeIndex: 0, laneIndex: route.laneIndices[0],
       distanceOnEdge: random() * Math.min(edge.lengthMeters * 0.7, 45), speedMps: random() * 2.5, accelerationMps2: 0,
       stoppedSeconds: 0, delaySeconds: 0, activeMovementId: null, connectorDistance: 0, completedTrips: 0 });
   }
@@ -293,11 +299,16 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     if (!edge) continue;
     let remaining = edgeLen(edge) - vehicle.distanceOnEdge;
     if (vehicle.routeIndex >= vehicle.routeEdgeIds.length - 1 && remaining < Math.max(24, vehicle.speedMps * 3.5)) {
-      const exits = (net.outgoingByNode.get(edge.to) || []).filter((candidate) => (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === candidate.id));
+      const exits = (net.outgoingByNode.get(edge.to) || []).filter((candidate) => (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === candidate.id && movement.fromLane === vehicle.laneIndex));
       if (exits.length) {
         const random = randomFor(vehicle.id * 7919 + vehicle.completedTrips * 104729 + Math.floor(now));
         const nextEdge = exits[Math.floor(random() * exits.length)];
-        vehicle.routeEdgeIds = [...vehicle.routeEdgeIds, ...findRoute(net, nextEdge, random)];
+        const transition = (net.movementsByIncomingEdge.get(edge.id) || []).find((movement) => movement.toEdgeId === nextEdge.id && movement.fromLane === vehicle.laneIndex);
+        if (transition) {
+          const extension = findRoute(net, nextEdge, random, transition.toLane);
+          vehicle.routeEdgeIds = [...vehicle.routeEdgeIds, ...extension.edgeIds];
+          vehicle.routeLaneIndices = [...vehicle.routeLaneIndices, ...extension.laneIndices];
+        }
       }
     }
     const nextId = vehicle.routeEdgeIds[vehicle.routeIndex + 1];
