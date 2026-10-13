@@ -1,26 +1,58 @@
 # RoadMind AZ Alpha
 
-A Windows-first research prototype for exploring Baku's road network, editing scenario-only infrastructure, and comparing synthetic traffic simulations.
+**A Windows-first digital-twin lab for exploring road infrastructure scenarios in Baku.**
 
-## Product boundary
+RoadMind is being built toward one long-term goal: a geographically complete digital copy of Azerbaijan's transport network, where engineers can edit a proposed road layout, run traffic scenarios, and compare measured outcomes before physical changes are made. Alpha starts with an online basemap and a limited, transparent demonstration of the proposed workflow.
 
-- Live vector basemap: OpenFreeMap, based on OpenStreetMap data. The public planet tiles are updated by the provider on a weekly cadence; freshness is therefore not real-time.
-- On-demand road and mapped-traffic-signal query: OpenStreetMap through a public Overpass API endpoint, limited to a small area around the visible map. Requests are cached/rate-limited in the app.
-- User-added traffic lights and roads are scenario edits stored locally; they do not alter OpenStreetMap or official infrastructure.
-- Vehicles and metrics in this Alpha are synthetic. They are a demonstrator, not an official traffic feed or an engineering-grade prediction.
+## What is in the current Alpha
 
-## Run on Windows
+- Desktop workspace built with React, TypeScript, MapLibre GL JS and Electron.
+- Online dark basemap based on OpenStreetMap, smooth zoom around the center, bounded camera, 2D/3D tilt and a Baku/Country navigation preset.
+- Available 3D building geometry from OpenFreeMap vector tiles.
+- On-demand OpenStreetMap import for road geometries and mapped traffic-signal nodes around the current map area.
+- Scenario-only editor to place traffic lights and draw draft road segments; imported OSM reference geometry is read-only.
+- A small synthetic demo route with virtual vehicles, configurable demo signal cycles, model-speed setting, local scenario save and JSON export.
+- Reproducible baseline-versus-scenario demo comparison, clear provenance labels, tests and a Windows installer workflow.
+- Branded SVG logo and app icon generation, including an installer with desktop and Start Menu shortcuts.
 
-Install Node.js 22 or later, then run `npm install`, `npm run dev`, or `npm run desktop:dev`.
+## Run locally on Windows
 
-To build the installer, run `npm run dist:win`. The installer is generated in the release folder. GitHub Actions builds a Windows installer on pushes to main and uploads it as an artifact.
+Install Node.js 22 or later, then open a terminal in this repository:
 
-## Tech stack
+~~~powershell
+npm install
+npm test
+npm run dev
+~~~
 
-React, TypeScript, MapLibre GL JS, OpenFreeMap, OpenStreetMap/Overpass, Electron and GitHub Actions.
+To launch the desktop wrapper during development:
 
-## Data and licensing
+~~~powershell
+npm run desktop:dev
+~~~
 
-Map data © OpenStreetMap contributors (ODbL). Vector tiles hosted by OpenFreeMap. OpenFreeMap and Overpass are community services; availability, coverage, and freshness are not guaranteed. The app displays attribution and must not be used as the sole basis for real-world traffic engineering decisions.
+To build a Windows installer:
 
-See docs/DATA_AND_LIMITS.md and docs/ROADMAP.md.
+~~~powershell
+npm run dist:win
+~~~
+
+The installer is produced under release/. GitHub Actions also runs tests and builds a Windows installer artifact after pushes to main and via Actions → Build Windows installer → Run workflow. Download the artifact from the workflow run after it completes.
+
+## Data freshness and accuracy
+
+- **Basemap:** OpenFreeMap vector tiles are fetched online. The provider's planet tile set is documented as updated weekly; the /planet/latest TileJSON alias follows the latest deployed tile set. This does not guarantee that every building or road was surveyed or updated in 2026. See [OpenFreeMap](https://github.com/hyperknot/openfreemap).
+- **Detailed OSM overlay:** roads and objects tagged highway=traffic_signals are requested for a small visible area from the current OpenStreetMap database through a public Overpass endpoint. The app throttles requests and offers manual refresh. These objects exist only when OSM contributors have mapped them. Shared Overpass services can be rate-limited or temporarily unavailable. See [Overpass API guidance](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances).
+- **No live traffic feed:** moving vehicles and traffic performance metrics are synthetic. The app is not connected to municipal signal controllers, navigation-provider telemetry, traffic cameras, induction loops or official live traffic feeds.
+- **No signal timing feed:** mapped OSM traffic-signal points do not include the current signal colour, live phase, offsets or approved traffic-signal programmes.
+- **No production-grade network yet:** imported OSM road lines are not a fully connected lane-by-lane graph. User-created road lines are design drafts and are not automatically connected to the simulation. Only the explicitly labeled schematic route drives the current demonstration cars.
+
+The product interface marks these limitations deliberately. Do not use Alpha metrics as engineering recommendations or for public-safety decisions. A road-engineering claim needs complete, checked lane topology, lawful measured traffic observations, documented signal programmes, model calibration and independent validation.
+
+## Attribution
+
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), licensed under the Open Database License (ODbL). Online vector tiles are hosted by [OpenFreeMap](https://openfreemap.org/). Keep attribution and review current provider terms when redistributing.
+
+## Development roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/DATA_AND_LIMITS.md](docs/DATA_AND_LIMITS.md).
