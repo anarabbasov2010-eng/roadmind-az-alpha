@@ -113,3 +113,26 @@ test('directional turn-lane tags restrict illegal lane-to-turn connectors', () =
   assert.ok(incoming.some((movement) => movement.toEdgeId.startsWith('203:') && movement.kind === 'left' && movement.fromLane === 0));
   assert.ok(!incoming.some((movement) => movement.toEdgeId.startsWith('204:') && movement.kind === 'right'));
 });
+
+test('scenario signal overrides control its junction but imported plans stay authoritative', async () => {
+  const { configureScenarioSignal } = await import('../src/microsim.ts');
+  const base = buildRoadNetwork([
+    road(501, [[49, 40], [49.001, 40]], [501, 502], { oneway: 'yes' }),
+    road(502, [[49.001, 40], [49.002, 40]], [502, 503], { oneway: 'yes' }),
+    road(503, [[49.001, 39.999], [49.001, 40]], [504, 502], { oneway: 'yes' }),
+    road(504, [[49.001, 40], [49.001, 40.001]], [502, 505], { oneway: 'yes' })
+  ]);
+  const nodeId = 'n502';
+  const micro = buildMicroNetwork(base, new Set([nodeId]));
+  const controller = micro.controllers.get(nodeId);
+  assert.ok(controller);
+  const movementId = controller.phases[0].movementIds[0];
+  configureScenarioSignal(micro, nodeId, { cycleSeconds: 80, greenShare: 0.6, offsetSeconds: 3, manualState: 'red' });
+  assert.equal(signalStateAt(controller, 0, movementId), 'red');
+  controller.source = 'imported';
+  controller.forcedState = null;
+  const previousOffset = controller.cycleOffsetSeconds;
+  configureScenarioSignal(micro, nodeId, { cycleSeconds: 100, greenShare: 0.4, offsetSeconds: 50, manualState: 'green' });
+  assert.equal(controller.cycleOffsetSeconds, previousOffset);
+  assert.equal(controller.forcedState, null);
+});
