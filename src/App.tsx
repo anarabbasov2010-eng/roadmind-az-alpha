@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
-import { buildRoadNetwork, laneLineCollection, networkNodeCollection, type RoadInput } from './road-graph';
+import { buildRoadNetwork, buildClosedSimulationRoute, laneLineCollection, networkNodeCollection, routeLengthMeters, type RoadInput } from './road-graph';
 import {
   Activity, AlertTriangle, Building2, CarFront, Check, ChevronDown, CircleHelp,
   Clock3, Compass, Download, Eraser, Gauge, GitCompareArrows, LocateFixed,
@@ -78,12 +78,12 @@ function roadCollection(roads: RoadDraft[]): FeatureCollection {
   };
 }
 
-function carsCollection(state: TrafficState): FeatureCollection {
+function carsCollection(state: TrafficState, route: Position[] = DEMO_ROUTE): FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: state.vehicles.map((vehicle) => {
-      const point = pointAtProgress(DEMO_ROUTE, vehicle.progress);
-      const next = pointAtProgress(DEMO_ROUTE, (vehicle.progress + 0.001) % 1);
+      const point = pointAtProgress(route, vehicle.progress);
+      const next = pointAtProgress(route, (vehicle.progress + 0.001) % 1);
       const bearing = Math.atan2(next[0] - point[0], next[1] - point[1]) * 180 / Math.PI;
       return {
         type: 'Feature', id: vehicle.id, geometry: { type: 'Point', coordinates: point },
@@ -236,6 +236,9 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   } as never });
   map.addLayer({ id: 'rm-demo-casing', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#aab3a8', 'line-width': 5, 'line-opacity': 0.36 } });
   map.addLayer({ id: 'rm-demo-line', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#83988b', 'line-width': 1.15, 'line-opacity': 0.64, 'line-dasharray': [1.8, 2.5] } });
+  map.addSource('rm-simulation-route', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({ id: 'rm-simulation-route-casing', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 6, 19, 8], 'line-opacity': 0.32 } });
+  map.addLayer({ id: 'rm-simulation-route-line', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.3, 16, 2.1, 19, 2.8], 'line-opacity': 0.92, 'line-dasharray': [2, 1.6] } });
 
   map.addSource('rm-osm-roads', { type: 'geojson', data: emptyCollection() as never });
   const roadWidth = ['*',
@@ -354,6 +357,8 @@ export default function App() {
   const stored = useMemo(safeScenario, []);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const simulationRouteRef = useRef<Position[]>(DEMO_ROUTE);
+  const simulationRouteLengthKmRef = useRef(2.6);
   const modeRef = useRef<ToolMode>('select');
   const pendingRoadRef = useRef<Position | null>(null);
   const lastRequestAtRef = useRef(0);
@@ -530,11 +535,28 @@ export default function App() {
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
       const network = buildRoadNetwork(roadsCapped);
+      const route = buildClosedSimulationRoute(network);
+      if (route && route.length >= 4) {
+        simulationRouteRef.current = route;
+        simulationRouteLengthKmRef.current = Math.max(0.05, routeLengthMeters(route) / 1000);
+        const routedSignals = signalsRef.current.map((signal) => ({
+          ...signal,
+          progress: progressForCoordinate(route, signal.coordinates),
+          connectedToDemoRoute: distanceToRouteMeters(route, signal.coordinates) <= 55
+        }));
+        signalsRef.current = routedSignals;
+        setSignals(routedSignals);
+        (map.getSource('rm-simulation-route') as GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: route }, properties: { kind: 'imported-street-cycle', lengthKm: simulationRouteLengthKmRef.current } }]
+        } as never);
+        (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(trafficRef.current, route) as never);
+      }
       (map.getSource('rm-road-graph-lanes') as GeoJSONSource | undefined)?.setData(laneLineCollection(network) as never);
       (map.getSource('rm-road-graph-nodes') as GeoJSONSource | undefined)?.setData(networkNodeCollection(network) as never);
       const signalSource = map.getSource('rm-osm-signals') as GeoJSONSource | undefined;
       signalSource?.setData(importedSignalCollection(signalsCapped) as never);
-      if (!automatic) flashToast('OSM: ' + network.stats.roads + ' дорог · ' + network.stats.nodes + ' узлов · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' геометрий полос.');
+      if (!automatic) flashToast('OSM: ' + network.stats.roads + ' дорог · ' + network.stats.nodes + ' узлов · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос' + (route ? ' · машины на реальном дорожном цикле' : ' · замкнутый маршрут не найден') + '.');
     } catch (error) {
       setOsmStatus('error');
       if (!automatic) flashToast('Не удалось обновить OSM. Проверьте интернет или повторите позже.');
@@ -615,8 +637,9 @@ export default function App() {
         return;
       }
       if (activeMode === 'signal') {
-        const progress = progressForCoordinate(DEMO_ROUTE, point);
-        const connected = distanceToRouteMeters(DEMO_ROUTE, point) <= 55;
+        const activeRoute = simulationRouteRef.current;
+        const progress = progressForCoordinate(activeRoute, point);
+        const connected = distanceToRouteMeters(activeRoute, point) <= 55;
         const signal: ScenarioSignal = {
           id: 'scenario-signal-' + Date.now(),
           name: 'Сценарий · светофор ' + String(signalsRef.current.length + 1).padStart(2, '0'),
@@ -690,7 +713,7 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
-    (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(traffic) as never);
+    (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(carsCollection(traffic, simulationRouteRef.current) as never);
   }, [traffic]);
   useEffect(() => {
     const map = mapRef.current;
@@ -706,6 +729,8 @@ export default function App() {
     vis('rm-osm-signal-points', showOsmSignals);
     vis('rm-demo-casing', showDemo);
     vis('rm-demo-line', showDemo);
+    vis('rm-simulation-route-casing', true);
+    vis('rm-simulation-route-line', true);
     vis('rm-vehicles-layer', showCars);
     vis('rm-user-signal-halo', showUserSignals);
     vis('rm-user-signal-points', showUserSignals);
@@ -717,7 +742,7 @@ export default function App() {
   useEffect(() => {
     if (!isRunning || mapStatus !== 'ready') return;
     const timer = window.setInterval(() => {
-      const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, 0.1 * speedMultiplier);
+      const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, 0.1 * speedMultiplier, simulationRouteLengthKmRef.current);
       trafficRef.current = next;
       setTraffic(next);
       if (Math.floor(next.time / 8) > Math.floor((next.time - 0.1 * speedMultiplier) / 8)) {
