@@ -99,3 +99,17 @@ test('signal plan export is a complete editable template and rejects incomplete 
   assert.equal(result.ok, false);
   assert.ok(result.errors.length > 0);
 });
+
+test('directional turn-lane tags restrict illegal lane-to-turn connectors', () => {
+  const network = buildRoadNetwork([
+    road(201, [[49.000, 40.000], [49.001, 40.000]], [21, 22], { lanes: '3', lanesForward: '2', lanesBackward: '1', turnLanesForward: 'through|left' }),
+    road(202, [[49.001, 40.000], [49.002, 40.000]], [22, 23]),
+    road(203, [[49.001, 40.000], [49.001, 40.001]], [22, 24]),
+    road(204, [[49.001, 40.000], [49.001, 39.999]], [22, 25])
+  ]);
+  const micro = buildMicroNetwork(network);
+  const incoming = micro.movements.filter((movement) => movement.fromEdgeId === '201:0:f');
+  assert.ok(incoming.some((movement) => movement.toEdgeId.startsWith('202:') && movement.kind === 'through' && movement.fromLane === 1));
+  assert.ok(incoming.some((movement) => movement.toEdgeId.startsWith('203:') && movement.kind === 'left' && movement.fromLane === 0));
+  assert.ok(!incoming.some((movement) => movement.toEdgeId.startsWith('204:') && movement.kind === 'right'));
+});
