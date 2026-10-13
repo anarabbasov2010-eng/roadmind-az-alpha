@@ -268,7 +268,7 @@ export function vehicleBearing(net: MicroNetwork, vehicle: MicroVehicle): number
 export function microVehicleCollection(net: MicroNetwork, state: MicroState) {
   return { type: 'FeatureCollection' as const, features: state.vehicles.map((vehicle) => ({
     type: 'Feature' as const, id: vehicle.id, geometry: { type: 'Point' as const, coordinates: vehiclePosition(net, vehicle) },
-    properties: { id: vehicle.id, bearing: vehicleBearing(net, vehicle), stopped: vehicle.speedMps < 0.15, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
+    properties: { id: vehicle.id, bearing: vehicleBearing(net, vehicle), speedKmh: Math.max(0, Math.round(vehicle.speedMps * 3.6)), stopped: vehicle.speedMps < 0.15, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
   })) };
 }
 export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config: MicroConfig, deltaSeconds: number): MicroState {
