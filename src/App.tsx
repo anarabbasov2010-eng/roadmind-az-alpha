@@ -371,7 +371,7 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   map.addLayer({
     id: 'rm-osm-crossing-stripes', type: 'line', source: 'rm-osm-crossings',
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
-    paint: { 'line-color': '#8f9990', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.7, 17, 1.8], 'line-dasharray': [0.7, 1.4], 'line-opacity': 0.9 }
+    paint: { 'line-color': '#8f9990', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.7, 17, 1.8], 'line-opacity': 0.9 }
   }, labelLayer);
   map.addSource('rm-osm-roads', { type: 'geojson', data: emptyCollection() as never });
   const roadWidth = ['*',
