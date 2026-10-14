@@ -317,10 +317,20 @@ export function vehiclePosition(net: MicroNetwork, vehicle: MicroVehicle): Posit
 export function vehicleBearing(net: MicroNetwork, vehicle: MicroVehicle): number {
   if (vehicle.activeMovementId) {
     const movement = net.movementsById.get(vehicle.activeMovementId);
-    if (movement) return bearingDegrees(movement.geometry[0], movement.geometry[Math.min(2, movement.geometry.length - 1)]);
+    if (movement) {
+      let remaining = vehicle.connectorDistance;
+      for (let i = 1; i < movement.geometry.length; i++) {
+        const length = distance(movement.geometry[i - 1], movement.geometry[i]);
+        if (remaining <= length || i === movement.geometry.length - 1) return bearingDegrees(movement.geometry[i - 1], movement.geometry[i]);
+        remaining -= length;
+      }
+    }
   }
   const edge = net.edgesById.get(vehicle.routeEdgeIds[vehicle.routeIndex]);
-  return edge ? bearingDegrees(edge.geometry[0], edge.geometry[edge.geometry.length - 1]) : 0;
+  if (!edge) return 0;
+  const a = pointAlongEdge(edge, vehicle.distanceOnEdge);
+  const b = pointAlongEdge(edge, Math.min(edgeLen(edge), vehicle.distanceOnEdge + 2));
+  return bearingDegrees(a, b);
 }
 export function microVehicleCollection(net: MicroNetwork, state: MicroState) {
   return { type: 'FeatureCollection' as const, features: state.vehicles.map((vehicle) => ({
@@ -337,7 +347,9 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
   for (const vehicle of vehicles) {
     if (vehicle.activeMovementId) continue;
     const key = vehicle.routeEdgeIds[vehicle.routeIndex] + ':' + vehicle.laneIndex;
-    occupancy.set(key, [...(occupancy.get(key) || []), vehicle]);
+    const laneVehicles = occupancy.get(key);
+    if (laneVehicles) laneVehicles.push(vehicle);
+    else occupancy.set(key, [vehicle]);
   }
   for (const list of occupancy.values()) list.sort((a, b) => b.distanceOnEdge - a.distanceOnEdge);
   const occupiedMovements = new Set<string>(vehicles.map((vehicle) => vehicle.activeMovementId).filter((id): id is string => Boolean(id)));
@@ -389,7 +401,13 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
       const requiredFromLane = nextEdgeId ? (net.movementsByIncomingEdge.get(edge.id) || []).find((movement) => movement.toEdgeId === nextEdgeId && movement.toLane === vehicle.routeLaneIndices[vehicle.routeIndex + 1] && movement.fromLane !== vehicle.laneIndex)?.fromLane : undefined;
       if (requiredFromLane !== undefined && requiredFromLane >= 0 && requiredFromLane < laneCount(edge)) {
         const targetOccupants = occupancy.get(edge.id + ':' + requiredFromLane) || [];
-        const safe = targetOccupants.every((other) => other.id === vehicle.id || Math.abs(other.distanceOnEdge - vehicle.distanceOnEdge) > 9);
+        const requiredGap = Math.max(9, vehicle.speedMps * config.desiredHeadwaySeconds + config.standstillGapMeters + 2);
+        const safe = targetOccupants.every((other) => {
+          if (other.id === vehicle.id) return true;
+          const gap = Math.abs(other.distanceOnEdge - vehicle.distanceOnEdge);
+          const otherChangingIntoTarget = other.laneChangeTo === requiredFromLane && (other.laneChangeProgress || 0) < 1;
+          return gap > requiredGap && !otherChangingIntoTarget;
+        });
         const targetMovement = (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === nextEdgeId && movement.fromLane === requiredFromLane);
         if (safe && targetMovement) {
           vehicle.laneChangeFrom = vehicle.laneIndex;
