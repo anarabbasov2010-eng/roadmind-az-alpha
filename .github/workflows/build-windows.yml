@@ -2,7 +2,7 @@ name: Build Windows installer
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/vehicle-speed-labels]
   pull_request:
     branches: [main]
   workflow_dispatch:
