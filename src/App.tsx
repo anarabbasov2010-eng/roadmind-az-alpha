@@ -19,6 +19,7 @@ type ToolMode = 'select' | 'signal' | 'road' | 'erase';
 type RoadDraft = { id: string; name: string; coordinates: Position[]; lanes: number };
 type OSMRoad = RoadInput;
 type OSMSignal = { id: number; name: string; coordinates: Position; direction?: string };
+type OSMCrossing = { id: number; coordinates: Position[]; name: string };
 type GeoFeature = {
   type: 'Feature';
   id?: string | number;
@@ -84,6 +85,41 @@ function roadCollection(roads: RoadDraft[]): FeatureCollection {
   };
 }
 
+function roadMarkingCollection(roads: RoadDraft[]): FeatureCollection {
+  const features: GeoFeature[] = [];
+  for (const road of roads) {
+    const lanes = Math.max(1, Math.min(6, Math.round(road.lanes || 1)));
+    // Dashed lane dividers are offset from the road centreline, one per lane boundary.
+    for (let lane = 1; lane < lanes; lane++) {
+      const offset = (lane - lanes / 2) * 3.25;
+      features.push({
+        type: 'Feature', id: road.id + '-lane-' + lane,
+        geometry: { type: 'LineString', coordinates: offsetRoadLine(road.coordinates, offset) },
+        properties: { roadId: road.id, lane }
+      });
+    }
+    if (lanes === 1) {
+      features.push({ type: 'Feature', id: road.id + '-centre', geometry: { type: 'LineString', coordinates: road.coordinates }, properties: { roadId: road.id, lane: 0 } });
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+function partialRoadCoordinates(points: Position[], progress: number): Position[] {
+  if (points.length < 2) return points;
+  const lengths = points.slice(1).map((point, index) => Math.hypot((point[0] - points[index][0]) * 80000, (point[1] - points[index][1]) * 111000));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  let remaining = total * Math.max(0, Math.min(1, progress));
+  const output: Position[] = [points[0]];
+  for (let index = 0; index < lengths.length; index++) {
+    const end = points[index + 1], begin = points[index], length = lengths[index];
+    if (remaining >= length) { output.push(end); remaining -= length; continue; }
+    if (length > 0 && remaining > 0) output.push([begin[0] + (end[0] - begin[0]) * remaining / length, begin[1] + (end[1] - begin[1]) * remaining / length]);
+    break;
+  }
+  return output.length > 1 ? output : [points[0], points[0]];
+}
+
 function carsCollection(state: TrafficState, route: Position[] = DEMO_ROUTE): FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -93,10 +129,41 @@ function carsCollection(state: TrafficState, route: Position[] = DEMO_ROUTE): Fe
       const bearing = Math.atan2(next[0] - point[0], next[1] - point[1]) * 180 / Math.PI;
       return {
         type: 'Feature', id: vehicle.id, geometry: { type: 'Point', coordinates: point },
-        properties: { id: vehicle.id, bearing, stopped: vehicle.stopped, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
+        properties: { id: vehicle.id, bearing, speedKmh: Math.max(0, Math.round(vehicle.speedKmh)), stopped: vehicle.stopped, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
       };
     })
   };
+}
+
+function crossingCollection(crossings: OSMCrossing[]): FeatureCollection {
+  const features: GeoFeature[] = [];
+  for (const crossing of crossings) {
+    const points = crossing.coordinates;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const lat = (a[1] + b[1]) * 0.5;
+      const xScale = 111320 * Math.max(0.2, Math.cos(lat * Math.PI / 180));
+      const dx = (b[0] - a[0]) * xScale, dy = (b[1] - a[1]) * 110540;
+      const length = Math.hypot(dx, dy);
+      if (length < 1.5) continue;
+      const nx = -dy / length, ny = dx / length;
+      // OSM crossing ways generally trace the direction across the carriageway.
+      // Generate short transverse bars across that way to create a zebra pattern.
+      for (let along = 0.35; along < length; along += 0.72) {
+        const t = along / length;
+        const cx = a[0] + (b[0] - a[0]) * t, cy = a[1] + (b[1] - a[1]) * t;
+        const halfWidth = 1.65;
+        const start: Position = [cx - nx * halfWidth / xScale, cy - ny * halfWidth / 110540];
+        const end: Position = [cx + nx * halfWidth / xScale, cy + ny * halfWidth / 110540];
+        features.push({
+          type: 'Feature', id: crossing.id + '-stripe-' + i + '-' + Math.round(along * 100),
+          geometry: { type: 'LineString', coordinates: [start, end] },
+          properties: { name: crossing.name }
+        });
+      }
+    }
+  }
+  return { type: 'FeatureCollection', features };
 }
 
 function importedRoadCollection(roads: OSMRoad[]): FeatureCollection {
@@ -276,7 +343,7 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
       id: 'rm-3d-buildings', type: 'fill-extrusion', source: 'rm-buildings', 'source-layer': 'building', minzoom: 13,
       filter: ['!=', ['get', 'hide_3d'], true],
       paint: {
-        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 9], 0, '#e3e4dc', 18, '#d2d8cf', 55, '#c5d0c5', 140, '#b5c3b7'],
+        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 9], 0, '#e5e5df', 18, '#d7d9d2', 55, '#c9cec5', 140, '#b8c2b8'],
         'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 12.8, 0, 14.25, ['coalesce', ['get', 'render_height'], ['get', 'height'], 9]],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
         'fill-extrusion-opacity': 0.94,
@@ -295,30 +362,72 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   map.addLayer({ id: 'rm-simulation-route-casing', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 6, 19, 8], 'line-opacity': 0.32 } });
   map.addLayer({ id: 'rm-simulation-route-line', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.3, 16, 2.1, 19, 2.8], 'line-opacity': 0.92, 'line-dasharray': [2, 1.6] } });
 
+  map.addSource('rm-osm-crossings', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({
+    id: 'rm-osm-crossing-base', type: 'line', source: 'rm-osm-crossings',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#f5f2e8', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.5, 17, 7], 'line-opacity': 0.98 }
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-osm-crossing-stripes', type: 'line', source: 'rm-osm-crossings',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#8f9990', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.7, 17, 1.8], 'line-opacity': 0.9 }
+  }, labelLayer);
   map.addSource('rm-osm-roads', { type: 'geojson', data: emptyCollection() as never });
   const roadWidth = ['*',
     ['interpolate', ['linear'], ['zoom'], 10, 0.8, 13, 2.6, 16, 6.5, 19, 10.5],
     ['match', ['get', 'roadClass'],
       'motorway', 1.42, 'trunk', 1.3, 'primary', 1.18, 'secondary', 1.03,
       'tertiary', 0.88, 'unclassified', 0.76, 0.62
-    ]
+    ],
+    ['+', 0.48, ['*', 0.24, ['min', 6, ['max', 1, ['to-number', ['get', 'lanes'], 2]]]]]
   ] as never;
+  map.addLayer({
+    id: 'rm-osm-roads-sidewalk', type: 'line', source: 'rm-osm-roads',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#d7d3c9', 'line-width': ['+', roadWidth, 12] as never, 'line-opacity': 0.92 }
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-osm-roads-curb', type: 'line', source: 'rm-osm-roads',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#b1b0a7', 'line-width': ['+', roadWidth, 6] as never, 'line-opacity': 0.96 }
+  }, labelLayer);
   map.addLayer({
     id: 'rm-osm-roads-casing', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#a9b0a7', 'line-width': ['+', roadWidth, 2.2] as never, 'line-opacity': 0.78 }
+    paint: { 'line-color': '#c5c8c0', 'line-width': ['+', roadWidth, 4.2] as never, 'line-opacity': 0.96 }
   }, labelLayer);
   map.addLayer({
     id: 'rm-osm-roads-line', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': ['match', ['get', 'roadClass'],
-        'motorway', '#f8f0dc', 'trunk', '#f7f0dc', 'primary', '#f7f3e8',
-        'secondary', '#e5e7df', 'tertiary', '#f4f4ed', 'unclassified', '#edece5',
-        'residential', '#e7e8e1', 'living_street', '#e1e3dc', 'service', '#e5e7df', '#ecece6'
+        'motorway', '#666e6b', 'trunk', '#69716e', 'primary', '#6e7471',
+        'secondary', '#777d79', 'tertiary', '#858a85', 'unclassified', '#969a93',
+        'residential', '#a0a39c', 'living_street', '#a8aaa2', 'service', '#b1b2aa', '#9b9e97'
       ],
       'line-width': roadWidth as never,
       'line-opacity': 0.97
+    }
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-osm-speed-limits', type: 'symbol', source: 'rm-osm-roads', minzoom: 15.5,
+    filter: ['all', ['has', 'maxspeed'], ['!=', ['get', 'maxspeed'], '']],
+    layout: {
+      'symbol-placement': 'line',
+      'symbol-spacing': 260,
+      'text-field': ['concat', ['get', 'maxspeed'], ' km/h'],
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 15.5, 8, 18, 10],
+      'text-padding': 12,
+      'text-keep-upright': true,
+      'text-allow-overlap': false
+    },
+    paint: {
+      'text-color': '#344c3c',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 2,
+      'text-halo-blur': 0.5
     }
   }, labelLayer);
   map.addLayer({
@@ -393,8 +502,14 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     }
   });
 
-  map.addSource('rm-user-roads', { type: 'geojson', data: emptyCollection() as never });
-  map.addLayer({ id: 'rm-user-road-line', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#f0c17e', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.5, 18, 5.5], 'line-opacity': 0.98 } });
+  map.addSource('rm-user-roads', { type: 'geojson', data: emptyCollection() as never, lineMetrics: true });
+  const userRoadWidth = ['interpolate', ['linear'], ['zoom'], 11, 3, 14, 7, 17, 15, 20, 25] as never;
+  map.addLayer({ id: 'rm-user-road-sidewalk', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#d5d1c6', 'line-width': ['+', userRoadWidth, 9] as never, 'line-opacity': 0.96 } });
+  map.addLayer({ id: 'rm-user-road-curb', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#a6a69d', 'line-width': ['+', userRoadWidth, 4] as never, 'line-opacity': 0.98 } });
+  map.addLayer({ id: 'rm-user-road-casing', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#4b514e', 'line-width': ['+', userRoadWidth, 1.8] as never, 'line-opacity': 0.98 } });
+  map.addLayer({ id: 'rm-user-road-line', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#555b58', 'line-width': userRoadWidth, 'line-opacity': 1 } });
+  map.addSource('rm-user-road-lane-markings', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({ id: 'rm-user-road-marking', type: 'line', source: 'rm-user-road-lane-markings', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#eee9d8', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 17, 1.1], 'line-dasharray': [3, 3], 'line-opacity': 0.92 } });
 
   map.addSource('rm-user-signals', { type: 'geojson', data: signalCollection(signals, 0) as never });
   map.addLayer({ id: 'rm-user-signal-halo', type: 'circle', source: 'rm-user-signals', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 5, 17, 11], 'circle-color': ['match', ['get', 'state'], 'red', '#d94c45', '#21865f'], 'circle-opacity': 0.13, 'circle-blur': 0.55 } });
@@ -415,6 +530,20 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     id: 'rm-vehicles-layer', type: 'symbol', source: 'rm-vehicles',
     layout: { 'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.35, 15, 0.65, 19, 0.95], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
     paint: { 'icon-opacity': ['case', ['get', 'stopped'], 0.74, 1] }
+  });
+  map.addLayer({
+    id: 'rm-vehicle-speed-labels', type: 'symbol', source: 'rm-vehicles', minzoom: 14,
+    layout: {
+      'text-field': ['concat', ['to-string', ['get', 'speedKmh']], ' km/h'],
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 14, 8, 17, 10, 20, 12],
+      'text-anchor': 'bottom', 'text-offset': [0, 1.65],
+      'text-allow-overlap': true, 'text-ignore-placement': true
+    },
+    paint: {
+      'text-color': ['case', ['get', 'stopped'], '#b43d35', '#233c2d'],
+      'text-halo-color': '#ffffff', 'text-halo-width': 1.8, 'text-halo-blur': 0.35
+    }
   });
 
 }
@@ -467,7 +596,7 @@ export default function App() {
     const [scenarioName, setScenarioName] = useState(stored.name || 'Баку · центральный узел');
   const [showOsmRoads, setShowOsmRoads] = useState(true);
   const [showOsmSignals, setShowOsmSignals] = useState(true);
-  const [showDemo, setShowDemo] = useState(true);
+  const [showDemo, setShowDemo] = useState(false);
   const [showCars, setShowCars] = useState(true);
   const [showUserSignals, setShowUserSignals] = useState(true);
   const [showBuildings, setShowBuildings] = useState(true);
@@ -475,6 +604,11 @@ export default function App() {
   const [comparison, setComparison] = useState<{ baseline: TrafficMetrics; current: TrafficMetrics } | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [history, setHistory] = useState<number[]>([]);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [desktopUpdate, setDesktopUpdate] = useState<{status:string;version?:string;message?:string;percent?:number}|null>(null);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
 
   const selectedSignal = signals.find((signal) => signal.id === selectedSignalId) || null;
   const selectedRoad = roads.find((road) => road.id === selectedRoadId) || null;
@@ -489,6 +623,16 @@ export default function App() {
     setToast(message);
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 3200);
+  }, []);
+
+
+  useEffect(() => {
+    const desktop = (window as Window & { roadmindDesktop?: { checkForUpdates: () => Promise<unknown>; onUpdateStatus: (callback: (payload: {status:string;version?:string;message?:string}) => void) => () => void; onUpdateProgress: (callback: (payload: {percent:number}) => void) => () => void } }).roadmindDesktop;
+    if (!desktop) return;
+    const offStatus = desktop.onUpdateStatus((payload) => setDesktopUpdate(payload));
+    const offProgress = desktop.onUpdateProgress((payload) => setDesktopUpdate((current) => ({ ...(current || {status:'downloading'}), status:'downloading', percent:payload.percent })));
+    void desktop.checkForUpdates();
+    return () => { offStatus(); offProgress(); };
   }, []);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -624,6 +768,8 @@ export default function App() {
       const east = (center.lng + halfLon).toFixed(5);
       const query = '[out:json][timeout:25];(' +
         'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|busway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|residential_link|living_street|pedestrian)$"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'way["footway"="crossing"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'way["highway"="footway"]["crossing"="marked"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'node["highway"="traffic_signals"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'relation["type"="restriction"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         ');out body geom;';
@@ -643,9 +789,19 @@ export default function App() {
       }
       if (!payload || !Array.isArray(payload.elements)) throw lastError || new Error('Пустой ответ OpenStreetMap');
       const parsedRoads: OSMRoad[] = [];
+      const parsedCrossings: OSMCrossing[] = [];
       const parsedSignals: OSMSignal[] = [];
       const parsedRestrictions: Array<{ fromWayId: number; toWayId: number; viaNodeId: string; restriction: string; fromDirection?: 1 | -1; toDirection?: 1 | -1 }> = [];
       for (const element of payload.elements) {
+        if (element.type === 'way' && element.geometry && element.geometry.length > 1 &&
+            (element.tags?.footway === 'crossing' || element.tags?.crossing === 'marked')) {
+          parsedCrossings.push({
+            id: element.id,
+            name: element.tags.name || 'Пешеходный переход',
+            coordinates: element.geometry.map((point) => [point.lon, point.lat] as Position)
+          });
+          continue;
+        }
         if (element.type === 'way' && element.geometry && element.geometry.length > 1 && element.tags?.highway) {
           parsedRoads.push({
             id: element.id, name: element.tags.name || element.tags.ref || element.tags.highway,
@@ -684,8 +840,10 @@ export default function App() {
         if (toIndex === 0) restriction.toDirection = 1;
         else if (toIndex === toRefs.length - 1) restriction.toDirection = -1;
       }
-      const roadsCapped = parsedRoads.slice(0, 6000);
-      const signalsCapped = parsedSignals.slice(0, 2000);
+      // Keep the complete returned local network. Truncating by Overpass response order
+      // can silently remove entire neighborhoods and disconnect routes on one side of the map.
+      const roadsCapped = parsedRoads;
+      const signalsCapped = parsedSignals;
       osmRoadsRef.current = roadsCapped;
       osmSignalsRef.current = signalsCapped;
       turnRestrictionsRef.current = parsedRestrictions;
@@ -695,6 +853,8 @@ export default function App() {
       setOsmStatus('ok');
       setShowOsmRoads(true);
       setShowOsmSignals(true);
+      const crossingSource = map.getSource('rm-osm-crossings') as GeoJSONSource | undefined;
+      crossingSource?.setData(crossingCollection(parsedCrossings) as never);
       const roadSource = map.getSource('rm-osm-roads') as GeoJSONSource | undefined;
       roadSource?.setData(importedRoadCollection(roadsCapped) as never);
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
@@ -862,10 +1022,40 @@ export default function App() {
     if (!map?.isStyleLoaded()) return;
     (map.getSource('rm-user-signals') as GeoJSONSource | undefined)?.setData(signalCollection(signals, traffic.time, microNetworkRef.current, microStateRef.current?.timeSeconds || 0, scenarioSignalNodeMapRef.current) as never);
   }, [signals, traffic.time]);
+  const previousRoadsRef = useRef<RoadDraft[]>(roads);
   useEffect(() => {
     const map = mapRef.current;
+    const previous = previousRoadsRef.current;
+    previousRoadsRef.current = roads;
     if (!map?.isStyleLoaded()) return;
-    (map.getSource('rm-user-roads') as GeoJSONSource | undefined)?.setData(roadCollection(roads) as never);
+    const source = map.getSource('rm-user-roads') as GeoJSONSource | undefined;
+    if (!source) return;
+    const added = roads.filter((road) => !previous.some((oldRoad) => oldRoad.id === road.id));
+    if (added.length !== 1) {
+      source.setData(roadCollection(roads) as never);
+      (map.getSource('rm-user-road-lane-markings') as GeoJSONSource | undefined)?.setData(roadMarkingCollection(roads) as never);
+      return;
+    }
+    const newRoad = added[0];
+    let frame = 0;
+    let startTime = 0;
+    const duration = 1050;
+    const animate = (now: number) => {
+      if (!startTime) startTime = now;
+      const progress = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const visibleRoad = { ...newRoad, coordinates: partialRoadCoordinates(newRoad.coordinates, eased) };
+      const visibleRoads = [...previous, visibleRoad];
+      source.setData(roadCollection(visibleRoads) as never);
+      (map.getSource('rm-user-road-lane-markings') as GeoJSONSource | undefined)?.setData(roadMarkingCollection(visibleRoads) as never);
+      if (progress < 1) frame = window.requestAnimationFrame(animate);
+      else {
+        source.setData(roadCollection(roads) as never);
+        (map.getSource('rm-user-road-lane-markings') as GeoJSONSource | undefined)?.setData(roadMarkingCollection(roads) as never);
+      }
+    };
+    frame = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frame);
   }, [roads]);
   useEffect(() => {
     const map = mapRef.current;
@@ -878,9 +1068,14 @@ export default function App() {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
     const vis = (id: string, shown: boolean) => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', shown ? 'visible' : 'none'); };
+    vis('rm-osm-crossing-base', showOsmRoads);
+    vis('rm-osm-crossing-stripes', showOsmRoads);
+    vis('rm-osm-roads-sidewalk', showOsmRoads);
+    vis('rm-osm-roads-curb', showOsmRoads);
     vis('rm-osm-roads-casing', showOsmRoads);
     vis('rm-osm-roads-line', showOsmRoads);
     vis('rm-osm-road-markings', showOsmRoads);
+    vis('rm-osm-speed-limits', showOsmRoads);
     vis('rm-osm-lane-markings-line', showOsmRoads);
     vis('rm-road-graph-lane-centres', showOsmRoads);
     vis('rm-road-graph-lane-edges', showOsmRoads);
@@ -894,14 +1089,29 @@ export default function App() {
     vis('rm-vehicles-layer', showCars);
     vis('rm-user-signal-halo', showUserSignals);
     vis('rm-user-signal-points', showUserSignals);
+    vis('rm-user-road-sidewalk', true);
+    vis('rm-user-road-curb', true);
     vis('rm-user-road-casing', true);
+    vis('rm-user-road-line', true);
     vis('rm-user-road-marking', true);
     vis('rm-3d-buildings', showBuildings && is3D);
   }, [showOsmRoads, showOsmSignals, showDemo, showCars, showUserSignals, showBuildings, is3D, mapStatus]);
 
   useEffect(() => {
     if (!isRunning || mapStatus !== 'ready') return;
-    const timer = window.setInterval(() => {
+    let frame = 0;
+    let previousFrame = 0;
+    let lastUiUpdate = 0;
+    let lastHistoryBucket = -1;
+    const animate = (timestamp: number) => {
+      if (document.visibilityState !== 'visible') {
+        previousFrame = timestamp;
+        frame = window.requestAnimationFrame(animate);
+        return;
+      }
+      const elapsed = previousFrame ? Math.min(0.05, (timestamp - previousFrame) / 1000) : 1 / 60;
+      previousFrame = timestamp;
+      const dt = elapsed * speedMultiplier;
       const microNetwork = microNetworkRef.current;
       const currentMicro = microStateRef.current;
       if (microNetwork && currentMicro && currentMicro.vehicles.length) {
@@ -909,7 +1119,7 @@ export default function App() {
           const nodeId = scenarioSignalNodeMapRef.current.get(signal.id);
           if (nodeId) configureScenarioSignal(microNetwork, nodeId, signal);
         }
-        const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...microConfigRef.current, defaultSpeedKmh: speedLimit }, 0.1 * speedMultiplier);
+        const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...microConfigRef.current, defaultSpeedKmh: speedLimit }, dt);
         microStateRef.current = nextMicro;
         (mapRef.current?.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, nextMicro) as never);
         const signalSecond = Math.floor(nextMicro.timeSeconds);
@@ -918,16 +1128,23 @@ export default function App() {
           (mapRef.current?.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(osmSignals, microNetwork, nextMicro.timeSeconds) as never);
         }
       }
-      const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, 0.1 * speedMultiplier, simulationRouteLengthKmRef.current);
+      const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, dt, simulationRouteLengthKmRef.current);
       trafficRef.current = next;
-      setTraffic(next);
-      if (Math.floor(next.time / 8) > Math.floor((next.time - 0.1 * speedMultiplier) / 8)) {
-        const currentMicro = microStateRef.current;
-        const value = currentMicro && currentMicro.vehicles.length ? microMetricsFor(currentMicro).queueMeters : metricsFor(next).queueMeters;
+      if (timestamp - lastUiUpdate >= 200) {
+        lastUiUpdate = timestamp;
+        setTraffic(next);
+      }
+      const bucket = Math.floor(next.time / 8);
+      if (bucket > lastHistoryBucket) {
+        lastHistoryBucket = bucket;
+        const current = microStateRef.current;
+        const value = current && current.vehicles.length ? microMetricsFor(current).queueMeters : metricsFor(next).queueMeters;
         setHistory((previous) => [...previous, value].slice(-30));
       }
-    }, 100);
-    return () => window.clearInterval(timer);
+      frame = window.requestAnimationFrame(animate);
+    };
+    frame = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frame);
   }, [isRunning, mapStatus, speedLimit, speedMultiplier, osmSignals]);
 
   useEffect(() => {
@@ -1115,8 +1332,8 @@ export default function App() {
       </header>
 
       <div className="workspace">
-        <aside className="left-sidebar">
-          <div className="sidebar-section-title">Инструменты</div>
+        <aside className={"left-sidebar " + (toolsCollapsed ? "sidebar-collapsed" : "")}>
+          <div className="sidebar-section-title"><span>Инструменты</span><button className="collapse-panel-button" onClick={() => setToolsCollapsed((v) => !v)}>{toolsCollapsed ? "Развернуть" : "Свернуть"}</button></div>
           <div className="tool-grid">
             <button className={'tool-tile ' + (mode === 'select' ? 'selected' : '')} onClick={() => changeMode('select')}><Compass size={17} /><span>Навигация</span><kbd>V</kbd></button>
             <button className={'tool-tile ' + (mode === 'signal' ? 'selected' : '')} onClick={() => changeMode('signal')}><TrafficCone size={17} /><span>Светофор</span><kbd>S</kbd></button>
@@ -1188,7 +1405,7 @@ export default function App() {
           {mapStatus === 'error' && <div className="map-error"><AlertTriangle size={17} /><strong>Не удалось загрузить карту</strong><p>Проверьте подключение к интернету. Онлайн-тайлы карты недоступны.</p><button onClick={() => window.location.reload()}><RefreshCw size={14} />Повторить</button></div>}
         </section>
 
-        <aside className="right-sidebar">
+        <aside className={"right-sidebar " + (inspectorCollapsed ? "inspector-collapsed" : "")}>\n          <div className="inspector-collapse-row"><strong>Сценарий</strong><button className="collapse-panel-button" onClick={() => setInspectorCollapsed((v) => !v)}>{inspectorCollapsed ? "Развернуть" : "Свернуть"}</button></div>
           <div className="inspector-header"><div><span className="section-eyebrow">SCENARIO INSPECTOR</span><h2>Сценарий</h2></div><button className="icon-button" title="Сбросить" onClick={resetScenario}><RotateCcw size={15} /></button></div>
           <div className="scenario-card"><div className="scenario-topline"><span>Текущий сценарий</span><span className="draft-badge"><i />Черновик</span></div><input aria-label="Название сценария" value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /><div className="scenario-footer"><span><Clock3 size={12} /> Автосохранение на этом компьютере</span></div></div>
 
@@ -1236,6 +1453,7 @@ export default function App() {
           {comparison && <div className="comparison-result"><div className="comparison-header"><Check size={14} />СРАВНЕНИЕ <button onClick={() => setComparison(null)}><X size={13} /></button></div><p>12 минут синтетической симуляции при одинаковом количестве виртуальных агентов.</p><div><span>Средняя скорость</span><strong>{comparison.baseline.averageSpeed} → {comparison.current.averageSpeed} км/ч <em>{speedDelta !== null && speedDelta > 0 ? '+' : ''}{speedDelta}</em></strong></div><div><span>Длина очереди</span><strong>{comparison.baseline.queueMeters} → {comparison.current.queueMeters} м <em>{queueDelta !== null && queueDelta > 0 ? '−' : '+'}{Math.abs(queueDelta || 0)} м</em></strong></div></div>}
         </aside>
       </div>
+      {desktopUpdate && desktopUpdate.status !== "current" && desktopUpdate.status !== "dev" && <div className="update-banner" role="status"><div><strong>{desktopUpdate.status === "available" ? `Доступна версия ${desktopUpdate.version || ""}` : desktopUpdate.status === "downloaded" ? `Версия ${desktopUpdate.version || ""} готова к установке` : desktopUpdate.status === "downloading" ? `Загрузка обновления · ${desktopUpdate.percent || 0}%` : desktopUpdate.status === "error" ? "Не удалось проверить обновление" : "Проверка обновлений…"}</strong><small>{desktopUpdate.message || (desktopUpdate.status === "error" ? "Проверьте подключение и попробуйте позже." : "Обновления устанавливаются поверх текущей версии.")}</small></div>{desktopUpdate.status === "available" && <button onClick={() => (window as Window & {roadmindDesktop?: {downloadUpdate:()=>Promise<unknown>}}).roadmindDesktop?.downloadUpdate()}>Скачать</button>}{desktopUpdate.status === "downloaded" && <button onClick={() => (window as Window & {roadmindDesktop?: {installUpdate:()=>Promise<unknown>}}).roadmindDesktop?.installUpdate()}>Перезапустить и обновить</button>}<button className="update-dismiss" onClick={() => setDesktopUpdate(null)} aria-label="Скрыть уведомление">×</button></div>}
       <footer className="statusbar"><div><span className={'status-dot ' + mapStatus} /><span>{mapStatus === 'ready' ? 'Карта подключена' : mapStatus === 'error' ? 'Нет соединения' : 'Загрузка карты'}</span><span className="status-divider" /><span>{osmStatus === 'ok' ? 'Данные дорог · ' + formatTime(osmUpdatedAt) : osmStatus === 'loading' ? 'Обновление дорожных данных…' : 'Данные дорог не обновлены'}</span></div><div><span>Автомобили и показатели — демонстрационная модель</span><span className="status-divider" /><span>RoadMind AZ</span></div></footer>
       {toast && <div className="toast-message"><span className="toast-icon"><Check size={14} /></span>{toast}</div>}
     </main>

@@ -1,9 +1,9 @@
 {
   "name": "roadmind-az-alpha",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "RoadMind AZ — a desktop digital-twin lab for road-infrastructure scenarios in Baku.",
-  "author": "RoadMind AZ Team",
+  "author": "242NM",
   "license": "MIT",
   "type": "module",
   "main": "electron/main.cjs",
@@ -14,7 +14,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "icons": "node scripts/generate-icons.cjs",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "dist:win": "npm run icons && npm run build && electron-builder --win nsis --x64 --publish never"
+    "dist:win": "npm run icons && npm run build && electron-builder --win nsis --x64 --publish never",
+    "release:win": "npm run icons && npm run build && electron-builder --win nsis --x64 --publish always"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -32,23 +33,43 @@
     "sharp": "^0.34.3",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
-    "wait-on": "^8.0.3"
+    "wait-on": "^8.0.3",
+    "electron-updater": "^6.6.2",
+    "electron-log": "^5.4.3"
   },
   "build": {
     "appId": "az.roadmind.desktop",
-    "productName": "RoadMind AZ Alpha",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "package.json"],
+    "productName": "RoadMind AZ",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
     "win": {
       "icon": "electron/roadmind.ico",
-      "target": ["nsis"],
-      "artifactName": "RoadMind-AZ-Alpha-0.2.0-Setup.exe"
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "RoadMind-AZ-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+      "createStartMenuShortcut": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "anarabbasov2010-eng",
+        "repo": "roadmind-az-alpha"
+      }
+    ]
   }
 }

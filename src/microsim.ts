@@ -15,6 +15,7 @@ export type MicroVehicle = {
   distanceOnEdge: number; speedMps: number; accelerationMps2: number;
   stoppedSeconds: number; delaySeconds: number; activeMovementId: string | null;
   connectorDistance: number; completedTrips: number;
+  laneChangeFrom?: number | null; laneChangeTo?: number | null; laneChangeProgress?: number;
 };
 export type MicroState = { timeSeconds: number; vehicles: MicroVehicle[]; completedTrips: number; totalDelaySeconds: number };
 export type MicroConfig = {
@@ -30,7 +31,7 @@ export type MicroNetwork = {
   stats: { movements: number; conflicts: number; controlledJunctions: number; laneConnections: number };
 };
 export const DEFAULT_MICRO_CONFIG: MicroConfig = {
-  vehicleCount: 48, defaultSpeedKmh: 40, desiredHeadwaySeconds: 1.6,
+  vehicleCount: 96, defaultSpeedKmh: 40, desiredHeadwaySeconds: 1.6,
   standstillGapMeters: 2.2, maxAccelerationMps2: 1.7,
   comfortableDecelerationMps2: 2.4, emergencyDecelerationMps2: 6.5,
   reactionTimeSeconds: 0.8, seed: 42
@@ -51,10 +52,34 @@ function classifyTurn(a: number, b: number): TurnKind {
   return d > 32 ? 'right' : d < -32 ? 'left' : 'through';
 }
 function mix(a: Position, b: Position, t: number): Position { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+function pointAlongEdge(edge: NetworkEdge, distanceMeters: number): Position {
+  const points = edge.geometry;
+  if (points.length < 2) return points[0] || [0, 0];
+  let remaining = clamp(distanceMeters, 0, edgeLen(edge));
+  for (let i = 1; i < points.length; i++) {
+    const segmentLength = distance(points[i - 1], points[i]);
+    if (remaining <= segmentLength || i === points.length - 1) {
+      const t = segmentLength > 0 ? clamp(remaining / segmentLength, 0, 1) : 0;
+      return mix(points[i - 1], points[i], t);
+    }
+    remaining -= segmentLength;
+  }
+  return points[points.length - 1];
+}
 function lanePoint(edge: NetworkEdge, point: Position, laneIndex: number): Position {
-  const a = edge.geometry[0], b = edge.geometry[edge.geometry.length - 1];
+  // Use the local segment tangent nearest the supplied point, not the chord from
+  // the first to last road vertex. This keeps vehicles and lane offsets on curved roads.
   const latitude = point[1] * RAD, xScale = 111320 * Math.max(0.15, Math.cos(latitude));
-  const dx = (b[0] - a[0]) * xScale, dy = (b[1] - a[1]) * 110540;
+  let bestDistance = Infinity, dx = 0, dy = 1;
+  for (let i = 1; i < edge.geometry.length; i++) {
+    const a = edge.geometry[i - 1], b = edge.geometry[i];
+    const sx = (b[0] - a[0]) * xScale, sy = (b[1] - a[1]) * 110540;
+    const px = (point[0] - a[0]) * xScale, py = (point[1] - a[1]) * 110540;
+    const lengthSq = sx * sx + sy * sy || 1;
+    const t = clamp((px * sx + py * sy) / lengthSq, 0, 1);
+    const distSq = (px - sx * t) ** 2 + (py - sy * t) ** 2;
+    if (distSq < bestDistance) { bestDistance = distSq; dx = sx; dy = sy; }
+  }
   const length = Math.hypot(dx, dy) || 1;
   const offset = (edge.carriagewayOffsetMeters || 0) + (laneIndex - (laneCount(edge) - 1) / 2) * 3.25;
   return [point[0] - (dy / length) * offset / xScale, point[1] + (dx / length) * offset / 110540];
@@ -225,16 +250,41 @@ function findRoute(net: MicroNetwork, startEdge: NetworkEdge, random: () => numb
 }
 export function createMicroState(net: MicroNetwork, config: MicroConfig = DEFAULT_MICRO_CONFIG): MicroState {
   const random = randomFor(config.seed);
-  const edges = net.source.edges.filter((edge) => edge.lengthMeters > 18 && edge.lanes > 0);
+  // Only seed vehicles on lane states that have a real, lane-compatible continuation.
+  // Randomly picking dead-end or isolated edges was creating stranded clusters on half-loaded maps.
+  const startCandidates: Array<{ edge: NetworkEdge; lane: number; route: { edgeIds: string[]; laneIndices: number[] } }> = [];
+  const laneStarts: Array<{ edge: NetworkEdge; lane: number }> = [];
+  for (const edge of net.source.edges) {
+    if (edge.lengthMeters <= 24 || edge.lanes <= 0 || !(net.movementsByIncomingEdge.get(edge.id) || []).length) continue;
+    for (let lane = 0; lane < laneCount(edge); lane++) {
+      if ((net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.fromLane === lane)) laneStarts.push({ edge, lane });
+    }
+  }
+  // Bound route-search work on city-scale graphs; choose a deterministic shuffled sample
+  // of plausible lane starts instead of running a full BFS for every lane in the map.
+  for (let i = laneStarts.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [laneStarts[i], laneStarts[j]] = [laneStarts[j], laneStarts[i]];
+  }
+  for (const start of laneStarts.slice(0, 240)) {
+    const route = findRoute(net, start.edge, random, start.lane);
+    if (route.edgeIds.length >= 3 && route.laneIndices.length === route.edgeIds.length) startCandidates.push({ ...start, route });
+  }
   const vehicles: MicroVehicle[] = [];
+  const laneSpacing = Math.max(12, config.defaultSpeedKmh / 3.6 * config.desiredHeadwaySeconds + config.standstillGapMeters);
+  const laneOccupancy = new Map<string, number>();
   for (let i = 0; i < clamp(config.vehicleCount, 0, 500); i++) {
-    if (!edges.length) break;
-    const edge = edges[Math.floor(random() * edges.length)];
-    const initialLane = Math.floor(random() * laneCount(edge));
-    const route = findRoute(net, edge, random, initialLane);
-    if (!route.edgeIds.length) continue;
+    if (!startCandidates.length) break;
+    const candidate = startCandidates[Math.floor(random() * startCandidates.length)];
+    const edge = candidate.edge, initialLane = candidate.lane, route = candidate.route;
+    const occupancyKey = edge.id + ':' + initialLane;
+    const slot = laneOccupancy.get(occupancyKey) || 0;
+    // Deterministic stagger avoids starting multiple cars almost on top of each other.
+    const usableLength = Math.max(0, Math.min(edge.lengthMeters - 12, 90));
+    const distanceOnEdge = Math.min(usableLength, 8 + slot * laneSpacing + random() * Math.min(4, laneSpacing * 0.25));
+    laneOccupancy.set(occupancyKey, slot + 1);
     vehicles.push({ id: i + 1, routeEdgeIds: route.edgeIds, routeLaneIndices: route.laneIndices, routeIndex: 0, tripBoundaryIndex: route.edgeIds.length - 1, laneIndex: route.laneIndices[0],
-      distanceOnEdge: random() * Math.min(edge.lengthMeters * 0.7, 45), speedMps: random() * 2.5, accelerationMps2: 0,
+      distanceOnEdge, speedMps: random() * 1.5, accelerationMps2: 0,
       stoppedSeconds: 0, delaySeconds: 0, activeMovementId: null, connectorDistance: 0, completedTrips: 0 });
   }
   return { timeSeconds: 0, vehicles, completedTrips: 0, totalDelaySeconds: 0 };
@@ -254,21 +304,38 @@ export function vehiclePosition(net: MicroNetwork, vehicle: MicroVehicle): Posit
       return movement.geometry[movement.geometry.length - 1];
     }
   }
-  const t = clamp(vehicle.distanceOnEdge / edgeLen(edge), 0, 1);
-  return lanePoint(edge, mix(edge.geometry[0], edge.geometry[edge.geometry.length - 1], t), vehicle.laneIndex);
+  const center = pointAlongEdge(edge, vehicle.distanceOnEdge);
+  if (vehicle.laneChangeFrom !== undefined && vehicle.laneChangeFrom !== null && vehicle.laneChangeTo !== undefined && vehicle.laneChangeTo !== null && (vehicle.laneChangeProgress || 0) < 1) {
+    const fromPoint = lanePoint(edge, center, vehicle.laneChangeFrom);
+    const toPoint = lanePoint(edge, center, vehicle.laneChangeTo);
+    const progress = Math.max(0, Math.min(1, vehicle.laneChangeProgress || 0));
+    const smooth = progress * progress * (3 - 2 * progress);
+    return mix(fromPoint, toPoint, smooth);
+  }
+  return lanePoint(edge, center, vehicle.laneIndex);
 }
 export function vehicleBearing(net: MicroNetwork, vehicle: MicroVehicle): number {
   if (vehicle.activeMovementId) {
     const movement = net.movementsById.get(vehicle.activeMovementId);
-    if (movement) return bearingDegrees(movement.geometry[0], movement.geometry[Math.min(2, movement.geometry.length - 1)]);
+    if (movement) {
+      let remaining = vehicle.connectorDistance;
+      for (let i = 1; i < movement.geometry.length; i++) {
+        const length = distance(movement.geometry[i - 1], movement.geometry[i]);
+        if (remaining <= length || i === movement.geometry.length - 1) return bearingDegrees(movement.geometry[i - 1], movement.geometry[i]);
+        remaining -= length;
+      }
+    }
   }
   const edge = net.edgesById.get(vehicle.routeEdgeIds[vehicle.routeIndex]);
-  return edge ? bearingDegrees(edge.geometry[0], edge.geometry[edge.geometry.length - 1]) : 0;
+  if (!edge) return 0;
+  const a = pointAlongEdge(edge, vehicle.distanceOnEdge);
+  const b = pointAlongEdge(edge, Math.min(edgeLen(edge), vehicle.distanceOnEdge + 2));
+  return bearingDegrees(a, b);
 }
 export function microVehicleCollection(net: MicroNetwork, state: MicroState) {
   return { type: 'FeatureCollection' as const, features: state.vehicles.map((vehicle) => ({
     type: 'Feature' as const, id: vehicle.id, geometry: { type: 'Point' as const, coordinates: vehiclePosition(net, vehicle) },
-    properties: { id: vehicle.id, bearing: vehicleBearing(net, vehicle), stopped: vehicle.speedMps < 0.15, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
+    properties: { id: vehicle.id, bearing: vehicleBearing(net, vehicle), speedKmh: Math.max(0, Math.round(vehicle.speedMps * 3.6)), stopped: vehicle.speedMps < 0.15, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
   })) };
 }
 export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config: MicroConfig, deltaSeconds: number): MicroState {
@@ -280,7 +347,9 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
   for (const vehicle of vehicles) {
     if (vehicle.activeMovementId) continue;
     const key = vehicle.routeEdgeIds[vehicle.routeIndex] + ':' + vehicle.laneIndex;
-    occupancy.set(key, [...(occupancy.get(key) || []), vehicle]);
+    const laneVehicles = occupancy.get(key);
+    if (laneVehicles) laneVehicles.push(vehicle);
+    else occupancy.set(key, [vehicle]);
   }
   for (const list of occupancy.values()) list.sort((a, b) => b.distanceOnEdge - a.distanceOnEdge);
   const occupiedMovements = new Set<string>(vehicles.map((vehicle) => vehicle.activeMovementId).filter((id): id is string => Boolean(id)));
@@ -317,6 +386,36 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     const edge = net.edgesById.get(vehicle.routeEdgeIds[vehicle.routeIndex]);
     if (!edge) continue;
     let remaining = edgeLen(edge) - vehicle.distanceOnEdge;
+    // Smooth lane changes begin only when the next routed movement requires another
+    // lane and the target lane has a safe gap both ahead and behind.
+    if (vehicle.laneChangeFrom !== undefined && vehicle.laneChangeFrom !== null && vehicle.laneChangeTo !== undefined && vehicle.laneChangeTo !== null) {
+      vehicle.laneChangeProgress = Math.min(1, (vehicle.laneChangeProgress || 0) + Math.max(0.4, vehicle.speedMps) * dt / 3.6);
+      if (vehicle.laneChangeProgress >= 1) {
+        vehicle.laneIndex = vehicle.laneChangeTo;
+        vehicle.laneChangeFrom = null;
+        vehicle.laneChangeTo = null;
+        vehicle.laneChangeProgress = 0;
+      }
+    } else if (!vehicle.activeMovementId && remaining > 12 && remaining < 75) {
+      const nextEdgeId = vehicle.routeEdgeIds[vehicle.routeIndex + 1];
+      const requiredFromLane = nextEdgeId ? (net.movementsByIncomingEdge.get(edge.id) || []).find((movement) => movement.toEdgeId === nextEdgeId && movement.toLane === vehicle.routeLaneIndices[vehicle.routeIndex + 1] && movement.fromLane !== vehicle.laneIndex)?.fromLane : undefined;
+      if (requiredFromLane !== undefined && requiredFromLane >= 0 && requiredFromLane < laneCount(edge)) {
+        const targetOccupants = occupancy.get(edge.id + ':' + requiredFromLane) || [];
+        const requiredGap = Math.max(9, vehicle.speedMps * config.desiredHeadwaySeconds + config.standstillGapMeters + 2);
+        const safe = targetOccupants.every((other) => {
+          if (other.id === vehicle.id) return true;
+          const gap = Math.abs(other.distanceOnEdge - vehicle.distanceOnEdge);
+          const otherChangingIntoTarget = other.laneChangeTo === requiredFromLane && (other.laneChangeProgress || 0) < 1;
+          return gap > requiredGap && !otherChangingIntoTarget;
+        });
+        const targetMovement = (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === nextEdgeId && movement.fromLane === requiredFromLane);
+        if (safe && targetMovement) {
+          vehicle.laneChangeFrom = vehicle.laneIndex;
+          vehicle.laneChangeTo = requiredFromLane;
+          vehicle.laneChangeProgress = 0;
+        }
+      }
+    }
     if (vehicle.routeIndex >= vehicle.routeEdgeIds.length - 1 && remaining < Math.max(24, vehicle.speedMps * 3.5)) {
       const exits = (net.outgoingByNode.get(edge.to) || []).filter((candidate) => (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === candidate.id && movement.fromLane === vehicle.laneIndex));
       if (exits.length) {
