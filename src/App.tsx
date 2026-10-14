@@ -84,6 +84,26 @@ function roadCollection(roads: RoadDraft[]): FeatureCollection {
   };
 }
 
+function roadMarkingCollection(roads: RoadDraft[]): FeatureCollection {
+  const features: GeoFeature[] = [];
+  for (const road of roads) {
+    const lanes = Math.max(1, Math.min(6, Math.round(road.lanes || 1)));
+    // Dashed lane dividers are offset from the road centreline, one per lane boundary.
+    for (let lane = 1; lane < lanes; lane++) {
+      const offset = (lane - lanes / 2) * 3.25;
+      features.push({
+        type: 'Feature', id: road.id + '-lane-' + lane,
+        geometry: { type: 'LineString', coordinates: offsetRoadLine(road.coordinates, offset) },
+        properties: { roadId: road.id, lane }
+      });
+    }
+    if (lanes === 1) {
+      features.push({ type: 'Feature', id: road.id + '-centre', geometry: { type: 'LineString', coordinates: road.coordinates }, properties: { roadId: road.id, lane: 0 } });
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
+
 function partialRoadCoordinates(points: Position[], progress: number): Position[] {
   if (points.length < 2) return points;
   const lengths = points.slice(1).map((point, index) => Math.hypot((point[0] - points[index][0]) * 80000, (point[1] - points[index][1]) * 111000));
@@ -445,7 +465,8 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   map.addLayer({ id: 'rm-user-road-curb', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#a6a69d', 'line-width': ['+', userRoadWidth, 4] as never, 'line-opacity': 0.98 } });
   map.addLayer({ id: 'rm-user-road-casing', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#4b514e', 'line-width': ['+', userRoadWidth, 1.8] as never, 'line-opacity': 0.98 } });
   map.addLayer({ id: 'rm-user-road-line', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#555b58', 'line-width': userRoadWidth, 'line-opacity': 1 } });
-  map.addLayer({ id: 'rm-user-road-marking', type: 'line', source: 'rm-user-roads', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#eee9d8', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 17, 1.1], 'line-dasharray': [3, 3], 'line-opacity': 0.92 } });
+  map.addSource('rm-user-road-lane-markings', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({ id: 'rm-user-road-marking', type: 'line', source: 'rm-user-road-lane-markings', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#eee9d8', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 17, 1.1], 'line-dasharray': [3, 3], 'line-opacity': 0.92 } });
 
   map.addSource('rm-user-signals', { type: 'geojson', data: signalCollection(signals, 0) as never });
   map.addLayer({ id: 'rm-user-signal-halo', type: 'circle', source: 'rm-user-signals', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 5, 17, 11], 'circle-color': ['match', ['get', 'state'], 'red', '#d94c45', '#21865f'], 'circle-opacity': 0.13, 'circle-blur': 0.55 } });
@@ -940,6 +961,7 @@ export default function App() {
     const added = roads.filter((road) => !previous.some((oldRoad) => oldRoad.id === road.id));
     if (added.length !== 1) {
       source.setData(roadCollection(roads) as never);
+      (map.getSource('rm-user-road-lane-markings') as GeoJSONSource | undefined)?.setData(roadMarkingCollection(roads) as never);
       return;
     }
     const newRoad = added[0];
@@ -951,9 +973,14 @@ export default function App() {
       const progress = Math.min(1, (now - startTime) / duration);
       const eased = 1 - Math.pow(1 - progress, 3);
       const visibleRoad = { ...newRoad, coordinates: partialRoadCoordinates(newRoad.coordinates, eased) };
-      source.setData(roadCollection([...previous, visibleRoad]) as never);
+      const visibleRoads = [...previous, visibleRoad];
+      source.setData(roadCollection(visibleRoads) as never);
+      (map.getSource('rm-user-road-lane-markings') as GeoJSONSource | undefined)?.setData(roadMarkingCollection(visibleRoads) as never);
       if (progress < 1) frame = window.requestAnimationFrame(animate);
-      else source.setData(roadCollection(roads) as never);
+      else {
+        source.setData(roadCollection(roads) as never);
+        (map.getSource('rm-user-road-lane-markings') as GeoJSONSource | undefined)?.setData(roadMarkingCollection(roads) as never);
+      }
     };
     frame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(frame);
