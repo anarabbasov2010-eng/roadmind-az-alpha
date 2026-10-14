@@ -353,7 +353,7 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
       }
     } else if (!vehicle.activeMovementId && remaining > 12 && remaining < 75) {
       const nextEdgeId = vehicle.routeEdgeIds[vehicle.routeIndex + 1];
-      const requiredFromLane = nextEdgeId ? (net.movementsByIncomingEdge.get(edge.id) || []).find((movement) => movement.toEdgeId === nextEdgeId && movement.fromLane !== vehicle.laneIndex)?.fromLane : undefined;
+      const requiredFromLane = nextEdgeId ? (net.movementsByIncomingEdge.get(edge.id) || []).find((movement) => movement.toEdgeId === nextEdgeId && movement.toLane === vehicle.routeLaneIndices[vehicle.routeIndex + 1] && movement.fromLane !== vehicle.laneIndex)?.fromLane : undefined;
       if (requiredFromLane !== undefined && requiredFromLane >= 0 && requiredFromLane < laneCount(edge)) {
         const targetOccupants = occupancy.get(edge.id + ':' + requiredFromLane) || [];
         const safe = targetOccupants.every((other) => other.id === vehicle.id || Math.abs(other.distanceOnEdge - vehicle.distanceOnEdge) > 9);
