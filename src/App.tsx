@@ -915,8 +915,8 @@ export default function App() {
         await addMapLayers(map, signalsRef.current);
         if (!map.getSource('rm-satellite-imagery')) {
           map.addSource('rm-satellite-imagery', { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: 'Imagery © Esri and its suppliers' });
-          const roadOverlayLayer = map.getLayer('rm-osm-roads-sidewalk') ? 'rm-osm-roads-sidewalk' : undefined;
-          map.addLayer({ id: 'rm-satellite-imagery-layer', type: 'raster', source: 'rm-satellite-imagery', layout: { visibility: showSatellite ? 'visible' : 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } }, roadOverlayLayer);
+          const firstRoadLayer = map.getStyle().layers?.find((layer) => layer.source && layer['source-layer'] && (layer.type === 'line' || layer.type === 'fill') && !String(layer.id).includes('building'))?.id;
+          map.addLayer({ id: 'rm-satellite-imagery-layer', type: 'raster', source: 'rm-satellite-imagery', layout: { visibility: showSatellite ? 'visible' : 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } }, firstRoadLayer);
         }
         (map.getSource('rm-user-signals') as GeoJSONSource).setData(signalCollection(signalsRef.current, trafficRef.current.time, microNetworkRef.current, microStateRef.current?.timeSeconds || 0, scenarioSignalNodeMapRef.current) as never);
         (map.getSource('rm-user-roads') as GeoJSONSource).setData(roadCollection(roadsRef.current) as never);
