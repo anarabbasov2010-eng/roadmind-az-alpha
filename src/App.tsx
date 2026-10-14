@@ -311,6 +311,30 @@ function loadSvgImage(relativePath: string): Promise<HTMLImageElement> {
   });
 }
 
+function roadSurfaceCollection(roads: OSMRoad[]) {
+  const features: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+  for (const road of roads) {
+    const coords = road.coordinates;
+    if (coords.length < 2) continue;
+    const parsedWidth = Number.parseFloat((road.width || '').replace('m', ''));
+    const lanes = Math.max(1, Math.min(8, Number.parseInt(road.lanes || '', 10) || (['motorway', 'trunk', 'primary', 'secondary'].includes(road.highway) ? 2 : 1)));
+    const width = Number.isFinite(parsedWidth) && parsedWidth >= 2 && parsedWidth <= 60 ? parsedWidth : lanes * 3.2;
+    const left: Position[] = [], right: Position[] = [];
+    for (let i = 0; i < coords.length; i++) {
+      const before = coords[Math.max(0, i - 1)], after = coords[Math.min(coords.length - 1, i + 1)];
+      const lat = coords[i][1], cos = Math.max(0.15, Math.cos(lat * Math.PI / 180));
+      const dx = (after[0] - before[0]) * 111320 * cos, dy = (after[1] - before[1]) * 110540;
+      const len = Math.hypot(dx, dy) || 1;
+      const ox = -(dy / len) * width / 2 / (111320 * cos), oy = (dx / len) * width / 2 / 110540;
+      left.push([coords[i][0] + ox, coords[i][1] + oy]);
+      right.push([coords[i][0] - ox, coords[i][1] - oy]);
+    }
+    const ring = [...left, ...right.reverse()];
+    if (ring.length >= 4) features.push({ type: 'Feature', properties: { roadId: road.id, roadClass: road.highway, lanes, width }, geometry: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
+  }
+  return { type: 'FeatureCollection' as const, features };
+}
+
 function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void> {
   // Image loading is handled before the layers are registered.
   return addMapLayersWithAssets(map, signals);
@@ -375,6 +399,17 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
     paint: { 'line-color': '#8f9990', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.7, 17, 1.8], 'line-opacity': 0.9 }
   }, labelLayer);
+  map.addSource('rm-osm-road-surfaces-3d', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({
+    id: 'rm-osm-road-surfaces-3d', type: 'fill-extrusion', source: 'rm-osm-road-surfaces-3d', minzoom: 15,
+    paint: {
+      'fill-extrusion-color': '#414643',
+      'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 15, 0.035, 18, 0.14],
+      'fill-extrusion-base': 0,
+      'fill-extrusion-opacity': 0.9,
+      'fill-extrusion-vertical-gradient': false
+    }
+  }, labelLayer);
   map.addSource('rm-osm-roads', { type: 'geojson', data: emptyCollection() as never });
   const roadWidth = ['*',
     ['interpolate', ['linear'], ['zoom'], 10, 0.8, 13, 2.6, 16, 6.5, 19, 10.5],
@@ -384,17 +419,6 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     ],
     ['+', 0.48, ['*', 0.24, ['min', 6, ['max', 1, ['to-number', ['get', 'lanes'], 2]]]]]
   ] as never;
-  map.addLayer({
-    id: 'rm-osm-roads-3d-surface', type: 'fill-extrusion', source: 'rm-osm-roads', minzoom: 15.5,
-    filter: ['has', 'width'],
-    paint: {
-      'fill-extrusion-color': '#343a38',
-      'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 15.5, 0.06, 18, 0.18],
-      'fill-extrusion-base': 0.02,
-      'fill-extrusion-opacity': 0.82,
-      'fill-extrusion-vertical-gradient': false
-    }
-  }, labelLayer);
   map.addLayer({
     id: 'rm-osm-roads-sidewalk', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
@@ -875,6 +899,7 @@ export default function App() {
       crossingSource?.setData(crossingCollection(parsedCrossings) as never);
       const roadSource = map.getSource('rm-osm-roads') as GeoJSONSource | undefined;
       roadSource?.setData(importedRoadCollection(roadsCapped) as never);
+      (map.getSource('rm-osm-road-surfaces-3d') as GeoJSONSource | undefined)?.setData(roadSurfaceCollection(roadsCapped) as never);
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
       const rebuilt = rebuildMicroNetwork(roadsRef.current, roadsCapped, signalsCapped, parsedRestrictions);
