@@ -15,6 +15,7 @@ export type MicroVehicle = {
   distanceOnEdge: number; speedMps: number; accelerationMps2: number;
   stoppedSeconds: number; delaySeconds: number; activeMovementId: string | null;
   connectorDistance: number; completedTrips: number;
+  laneChangeFrom?: number | null; laneChangeTo?: number | null; laneChangeProgress?: number;
 };
 export type MicroState = { timeSeconds: number; vehicles: MicroVehicle[]; completedTrips: number; totalDelaySeconds: number };
 export type MicroConfig = {
@@ -270,7 +271,15 @@ export function vehiclePosition(net: MicroNetwork, vehicle: MicroVehicle): Posit
     }
   }
   const t = clamp(vehicle.distanceOnEdge / edgeLen(edge), 0, 1);
-  return lanePoint(edge, mix(edge.geometry[0], edge.geometry[edge.geometry.length - 1], t), vehicle.laneIndex);
+  const center = mix(edge.geometry[0], edge.geometry[edge.geometry.length - 1], t);
+  if (vehicle.laneChangeFrom !== undefined && vehicle.laneChangeFrom !== null && vehicle.laneChangeTo !== undefined && vehicle.laneChangeTo !== null && (vehicle.laneChangeProgress || 0) < 1) {
+    const fromPoint = lanePoint(edge, center, vehicle.laneChangeFrom);
+    const toPoint = lanePoint(edge, center, vehicle.laneChangeTo);
+    const progress = Math.max(0, Math.min(1, vehicle.laneChangeProgress || 0));
+    const smooth = progress * progress * (3 - 2 * progress);
+    return mix(fromPoint, toPoint, smooth);
+  }
+  return lanePoint(edge, center, vehicle.laneIndex);
 }
 export function vehicleBearing(net: MicroNetwork, vehicle: MicroVehicle): number {
   if (vehicle.activeMovementId) {
@@ -332,6 +341,30 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     const edge = net.edgesById.get(vehicle.routeEdgeIds[vehicle.routeIndex]);
     if (!edge) continue;
     let remaining = edgeLen(edge) - vehicle.distanceOnEdge;
+    // Smooth lane changes begin only when the next routed movement requires another
+    // lane and the target lane has a safe gap both ahead and behind.
+    if (vehicle.laneChangeFrom !== undefined && vehicle.laneChangeFrom !== null && vehicle.laneChangeTo !== undefined && vehicle.laneChangeTo !== null) {
+      vehicle.laneChangeProgress = Math.min(1, (vehicle.laneChangeProgress || 0) + Math.max(0.4, vehicle.speedMps) * dt / 3.6);
+      if (vehicle.laneChangeProgress >= 1) {
+        vehicle.laneIndex = vehicle.laneChangeTo;
+        vehicle.laneChangeFrom = null;
+        vehicle.laneChangeTo = null;
+        vehicle.laneChangeProgress = 0;
+      }
+    } else if (!vehicle.activeMovementId && remaining > 12 && remaining < 75) {
+      const nextEdgeId = vehicle.routeEdgeIds[vehicle.routeIndex + 1];
+      const requiredFromLane = nextEdgeId ? (net.movementsByIncomingEdge.get(edge.id) || []).find((movement) => movement.toEdgeId === nextEdgeId && movement.fromLane !== vehicle.laneIndex)?.fromLane : undefined;
+      if (requiredFromLane !== undefined && requiredFromLane >= 0 && requiredFromLane < laneCount(edge)) {
+        const targetOccupants = occupancy.get(edge.id + ':' + requiredFromLane) || [];
+        const safe = targetOccupants.every((other) => other.id === vehicle.id || Math.abs(other.distanceOnEdge - vehicle.distanceOnEdge) > 9);
+        const targetMovement = (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === nextEdgeId && movement.fromLane === requiredFromLane);
+        if (safe && targetMovement) {
+          vehicle.laneChangeFrom = vehicle.laneIndex;
+          vehicle.laneChangeTo = requiredFromLane;
+          vehicle.laneChangeProgress = 0;
+        }
+      }
+    }
     if (vehicle.routeIndex >= vehicle.routeEdgeIds.length - 1 && remaining < Math.max(24, vehicle.speedMps * 3.5)) {
       const exits = (net.outgoingByNode.get(edge.to) || []).filter((candidate) => (net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.toEdgeId === candidate.id && movement.fromLane === vehicle.laneIndex));
       if (exits.length) {
