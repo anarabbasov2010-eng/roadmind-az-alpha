@@ -934,6 +934,20 @@ export default function App() {
       if (lastAutoTimerRef.current !== null) window.clearTimeout(lastAutoTimerRef.current);
       lastAutoTimerRef.current = window.setTimeout(() => syncOsmRef.current?.(true), 650);
     });
+    map.on('mousemove', (event: MapMouseEvent) => {
+      if (modeRef.current !== 'road') return;
+      const points = roadDrawPointsRef.current;
+      if (!points.length) return;
+      const cursor: Position = [event.lngLat.lng, event.lngLat.lat];
+      const preview = map.getSource('rm-road-draft-preview') as GeoJSONSource | undefined;
+      if (!preview) return;
+      preview.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { kind: 'cursor-preview' }, geometry: { type: 'LineString', coordinates: [...points, cursor] } }, ...points.map((coordinate, index) => ({ type: 'Feature', properties: { kind: 'vertex', index }, geometry: { type: 'Point', coordinates: coordinate } }))] } as never);
+      map.getCanvas().style.cursor = 'crosshair';
+    });
+    map.on('mouseleave', () => {
+      if (modeRef.current === 'road') map.getCanvas().style.cursor = 'crosshair';
+    });
+
     map.on('click', (event: MapMouseEvent) => {
       const activeMode = modeRef.current;
       const point: Position = [event.lngLat.lng, event.lngLat.lat];
