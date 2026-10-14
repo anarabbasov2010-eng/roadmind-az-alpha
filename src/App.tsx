@@ -611,8 +611,8 @@ export default function App() {
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [desktopUpdate, setDesktopUpdate] = useState<{status:string;version?:string;message?:string;percent?:number}|null>(null);
-  const [toolsCollapsed, setToolsCollapsed] = useState(false);
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  
+  
 
   const selectedSignal = signals.find((signal) => signal.id === selectedSignalId) || null;
   const selectedRoad = roads.find((road) => road.id === selectedRoadId) || null;
