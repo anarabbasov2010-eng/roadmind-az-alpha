@@ -65,6 +65,46 @@ test('vehicles use imported street edges and advance with acceleration limits', 
   assert.ok(next.vehicles.every((vehicle) => vehicle.speedMps >= 0 && Number.isFinite(vehicle.accelerationMps2)));
 });
 
+test('vehicles are seeded only on connected lane routes with valid lane states', () => {
+  const micro = buildMicroNetwork(squareNetwork());
+  const state = createMicroState(micro, {
+    vehicleCount: 32, defaultSpeedKmh: 35, desiredHeadwaySeconds: 1.5,
+    standstillGapMeters: 2, maxAccelerationMps2: 1.5,
+    comfortableDecelerationMps2: 2.2, emergencyDecelerationMps2: 6,
+    reactionTimeSeconds: 0.8, seed: 2026
+  });
+  assert.ok(state.vehicles.length > 0);
+  for (const vehicle of state.vehicles) {
+    assert.ok(vehicle.routeEdgeIds.length >= 3);
+    assert.equal(vehicle.routeLaneIndices.length, vehicle.routeEdgeIds.length);
+    assert.ok(vehicle.laneIndex >= 0);
+    const edge = micro.edgesById.get(vehicle.routeEdgeIds[0]);
+    assert.ok(edge);
+    assert.ok(vehicle.laneIndex < edge.lanes);
+  }
+});
+
+test('vehicle positions follow intermediate vertices on curved roads instead of a straight chord', () => {
+  const curved = buildRoadNetwork([
+    road(701, [[49, 40], [49.0005, 40.0008], [49.001, 40]], [701, 702], { oneway: 'yes', lanes: '1' }),
+    road(702, [[49.001, 40], [49.002, 40]], [702, 703], { oneway: 'yes', lanes: '1' }),
+    road(703, [[49.001, 40], [49.001, 40.001]], [702, 704], { oneway: 'yes', lanes: '1' })
+  ]);
+  const micro = buildMicroNetwork(curved);
+  const state = createMicroState(micro, {
+    vehicleCount: 8, defaultSpeedKmh: 30, desiredHeadwaySeconds: 1.5,
+    standstillGapMeters: 2, maxAccelerationMps2: 1.5,
+    comfortableDecelerationMps2: 2.2, emergencyDecelerationMps2: 6,
+    reactionTimeSeconds: 0.8, seed: 5
+  });
+  const vehicle = state.vehicles.find((item) => item.routeEdgeIds[0] === '701:0:f');
+  if (vehicle) {
+    vehicle.distanceOnEdge = 45;
+    const position = vehiclePosition(micro, vehicle);
+    assert.ok(position[1] > 40.00015, 'position should follow the curved intermediate vertex');
+  }
+});
+
 test('calibration CSV parses observations and adjusts simulation parameters', () => {
   const samples = parseCalibrationCsv('timestamp;location;source;speed_kmh;flow_veh_per_hour;queue_meters\n2026-10-13T10:00:00Z;Baku-J1;manual-counter;32;900;45\n2026-10-13T10:05:00Z;Baku-J1;manual-counter;28;720;60');
   assert.equal(samples.length, 2);
