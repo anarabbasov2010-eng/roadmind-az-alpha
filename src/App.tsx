@@ -606,6 +606,7 @@ export default function App() {
   const [showCars, setShowCars] = useState(true);
   const [showUserSignals, setShowUserSignals] = useState(true);
   const [showBuildings, setShowBuildings] = useState(true);
+  const [showSatellite, setShowSatellite] = useState(false);
   const [toast, setToast] = useState('');
   const [comparison, setComparison] = useState<{ baseline: TrafficMetrics; current: TrafficMetrics } | null>(null);
   const [isComparing, setIsComparing] = useState(false);
@@ -912,6 +913,11 @@ export default function App() {
       window.clearTimeout(failTimer);
       try {
         await addMapLayers(map, signalsRef.current);
+        if (!map.getSource('rm-satellite-imagery')) {
+          map.addSource('rm-satellite-imagery', { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: 'Imagery © Esri and its suppliers' });
+          const firstStyleLayer = map.getStyle().layers?.[0]?.id;
+          map.addLayer({ id: 'rm-satellite-imagery-layer', type: 'raster', source: 'rm-satellite-imagery', layout: { visibility: showSatellite ? 'visible' : 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } }, firstStyleLayer);
+        }
         (map.getSource('rm-user-signals') as GeoJSONSource).setData(signalCollection(signalsRef.current, trafficRef.current.time, microNetworkRef.current, microStateRef.current?.timeSeconds || 0, scenarioSignalNodeMapRef.current) as never);
         (map.getSource('rm-user-roads') as GeoJSONSource).setData(roadCollection(roadsRef.current) as never);
         (map.getSource('rm-vehicles') as GeoJSONSource).setData(carsCollection(trafficRef.current) as never);
@@ -1016,6 +1022,13 @@ export default function App() {
       mapRef.current = null;
     };
   }, [flashToast]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.isStyleLoaded()) return;
+    const layer = map.getLayer('rm-satellite-imagery-layer');
+    if (layer) map.setLayoutProperty('rm-satellite-imagery-layer', 'visibility', showSatellite ? 'visible' : 'none');
+  }, [showSatellite]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1357,7 +1370,7 @@ export default function App() {
               const road: RoadDraft = { id: 'scenario-road-' + Date.now(), name: 'Новый участок ' + String(roadsRef.current.length + 1), coordinates: points, lanes: roadDrawLanes, direction: roadDrawDirection };
               updateRoadDrafts([...roadsRef.current, road]);
               setSelectedRoadId(road.id); setSelectedSignalId(null);
-              roadDrawPointsRef.current = []; setRoadDrawPoints([]);
+              roadDrawPointsRef.current = []; setRoadDrawPoints([]); (mapRef.current?.getSource('rm-road-draft-preview') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: [] } as never);
               setMode('select'); modeRef.current = 'select';
               flashToast('Дорога сохранена. Для работы в симуляции соединяйте её концы с узлами дорожной сети.');
             }}>Завершить дорогу</button>
@@ -1408,6 +1421,7 @@ export default function App() {
           <div className="map-top-right">
             <button className={!is3D ? 'active' : ''} onClick={() => toggle3D(false)}>2D</button>
             <button className={is3D ? 'active' : ''} onClick={() => toggle3D(true)}>3D</button>
+            <button className={showSatellite ? 'active' : ''} onClick={() => setShowSatellite((value) => !value)} title="Спутниковые снимки Esri">Спутник</button>
             <span />
             <button title="Вернуть на север" onClick={() => { setCameraBearing(0); mapRef.current?.easeTo({ bearing: 0, duration: 350 }); }}><Compass size={15} /></button>
           </div>
