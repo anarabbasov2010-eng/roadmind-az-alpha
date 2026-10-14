@@ -1332,8 +1332,8 @@ export default function App() {
       </header>
 
       <div className="workspace">
-        <aside className="left-sidebar">
-          <div className="sidebar-section-title">Инструменты</div>
+        <aside className={"left-sidebar " + (toolsCollapsed ? "sidebar-collapsed" : "")}>
+          <div className="sidebar-section-title"><span>Инструменты</span><button className="collapse-panel-button" onClick={() => setToolsCollapsed((v) => !v)}>{toolsCollapsed ? "Развернуть" : "Свернуть"}</button></div>
           <div className="tool-grid">
             <button className={'tool-tile ' + (mode === 'select' ? 'selected' : '')} onClick={() => changeMode('select')}><Compass size={17} /><span>Навигация</span><kbd>V</kbd></button>
             <button className={'tool-tile ' + (mode === 'signal' ? 'selected' : '')} onClick={() => changeMode('signal')}><TrafficCone size={17} /><span>Светофор</span><kbd>S</kbd></button>
