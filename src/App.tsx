@@ -421,6 +421,8 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   map.addLayer({ id: 'rm-simulation-route-casing', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 6, 19, 8], 'line-opacity': 0.32 } });
   map.addLayer({ id: 'rm-simulation-route-line', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.3, 16, 2.1, 19, 2.8], 'line-opacity': 0.92, 'line-dasharray': [2, 1.6] } });
 
+  map.addSource('rm-osm-speed-cameras', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({ id: 'rm-osm-speed-camera-points', type: 'circle', source: 'rm-osm-speed-cameras', minzoom: 12, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 3, 17, 6], 'circle-color': '#c47b38', 'circle-stroke-color': '#fff7e8', 'circle-stroke-width': 1.5, 'circle-opacity': 0.96 } }, labelLayer);
   map.addSource('rm-osm-crossings', { type: 'geojson', data: emptyCollection() as never });
   map.addLayer({
     id: 'rm-osm-crossing-base', type: 'line', source: 'rm-osm-crossings',
@@ -850,6 +852,8 @@ export default function App() {
         'way["footway"="crossing"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'way["highway"="footway"]["crossing"="marked"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'node["highway"="traffic_signals"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'node["highway"="speed_camera"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'node["enforcement"="maxspeed"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'relation["type"="restriction"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         ');out body geom;';
       const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
@@ -870,6 +874,7 @@ export default function App() {
       const parsedRoads: OSMRoad[] = [];
       const parsedCrossings: OSMCrossing[] = [];
       const parsedSignals: OSMSignal[] = [];
+      const parsedSpeedCameras: Array<{ id: number; coordinates: Position; name: string }> = [];
       const parsedRestrictions: Array<{ fromWayId: number; toWayId: number; viaNodeId: string; restriction: string; fromDirection?: 1 | -1; toDirection?: 1 | -1 }> = [];
       for (const element of payload.elements) {
         if (element.type === 'way' && element.geometry && element.geometry.length > 1 &&
@@ -899,6 +904,9 @@ export default function App() {
           const to = element.members.find((member) => member.role === 'to' && member.type === 'way');
           const via = element.members.find((member) => member.role === 'via' && member.type === 'node');
           if (from && to && via) parsedRestrictions.push({ fromWayId: from.ref, toWayId: to.ref, viaNodeId: 'n' + via.ref, restriction: element.tags.restriction });
+        }
+        if (element.type === 'node' && (element.tags?.highway === 'speed_camera' || element.tags?.enforcement === 'maxspeed') && typeof element.lat === 'number' && Number.isFinite(element.lat) && typeof element.lon === 'number' && Number.isFinite(element.lon)) {
+          parsedSpeedCameras.push({ id: element.id, coordinates: [element.lon, element.lat], name: element.tags.name || 'Камера контроля скорости из OSM' });
         }
         if (element.type === 'node' && element.tags?.highway === 'traffic_signals' && typeof element.lat === 'number' && Number.isFinite(element.lat) && typeof element.lon === 'number' && Number.isFinite(element.lon)) {
           parsedSignals.push({
@@ -932,6 +940,8 @@ export default function App() {
       setOsmStatus('ok');
       setShowOsmRoads(true);
       setShowOsmSignals(true);
+      const cameraFeatures: GeoFeature[] = parsedSpeedCameras.map((camera) => ({ type: 'Feature', id: camera.id, geometry: { type: 'Point', coordinates: camera.coordinates }, properties: { id: camera.id, name: camera.name, source: 'OpenStreetMap' } }));
+      (map.getSource('rm-osm-speed-cameras') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: cameraFeatures } as never);
       const crossingSource = map.getSource('rm-osm-crossings') as GeoJSONSource | undefined;
       crossingSource?.setData(crossingCollection(parsedCrossings) as never);
       const roadSource = map.getSource('rm-osm-roads') as GeoJSONSource | undefined;
@@ -946,7 +956,7 @@ export default function App() {
       const rebuilt = rebuildMicroNetwork(roadsRef.current, roadsCapped, signalsCapped, parsedRestrictions);
       if (!rebuilt) throw new Error('Road graph did not initialize');
       const { network, microNetwork } = rebuilt;
-      if (!automatic) flashToast('Сеть OSM: ' + network.stats.roads + ' дорог · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос · ' + microNetwork.stats.movements + ' манёвров · ' + microNetwork.stats.conflicts + ' конфликтов · ' + microNetwork.stats.controlledJunctions + ' узлов со светофорами · ' + parsedRestrictions.length + ' ограничений поворота.');
+      if (!automatic) flashToast('Сеть OSM: ' + network.stats.roads + ' дорог · ' + network.stats.intersections + ' перекрёстков · ' + network.stats.laneCount + ' полос · ' + microNetwork.stats.movements + ' манёвров · ' + microNetwork.stats.conflicts + ' конфликтов · ' + microNetwork.stats.controlledJunctions + ' узлов со светофорами · ' + parsedRestrictions.length + ' ограничений поворота · ' + parsedCrossings.length + ' переходов · ' + parsedSpeedCameras.length + ' камер скорости из OSM.');
     } catch (error) {
       setOsmStatus('error');
       if (!automatic) flashToast('Не удалось обновить OSM. Проверьте интернет или повторите позже.');
@@ -1187,6 +1197,7 @@ export default function App() {
     vis('rm-road-graph-lane-centres', showOsmRoads);
     vis('rm-road-graph-lane-edges', showOsmRoads);
     vis('rm-road-graph-intersections', showOsmRoads);
+    vis('rm-osm-speed-camera-points', showOsmSignals);
     vis('rm-osm-signal-halo', showOsmSignals);
     vis('rm-osm-signal-points', showOsmSignals);
     vis('rm-demo-casing', showDemo);
