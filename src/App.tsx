@@ -944,7 +944,7 @@ export default function App() {
       preview.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { kind: 'cursor-preview' }, geometry: { type: 'LineString', coordinates: [...points, cursor] } }, ...points.map((coordinate, index) => ({ type: 'Feature', properties: { kind: 'vertex', index }, geometry: { type: 'Point', coordinates: coordinate } }))] } as never);
       map.getCanvas().style.cursor = 'crosshair';
     });
-    map.on('mouseleave', () => {
+    map.getCanvas().addEventListener('mouseleave', () => {
       if (modeRef.current === 'road') map.getCanvas().style.cursor = 'crosshair';
     });
 
