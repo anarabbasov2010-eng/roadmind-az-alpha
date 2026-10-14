@@ -433,7 +433,7 @@ export function stepMicroSimulation(net: MicroNetwork, state: MicroState, config
     const movement = nextId ? (net.movementsByIncomingEdge.get(edge.id) || []).find((item) => item.toEdgeId === nextId && item.fromLane === vehicle.laneIndex) : null;
     const controller = movement ? net.controllers.get(movement.nodeId) : undefined;
     const light = movement && controller ? signalStateAt(controller, now, movement.id) : 'green';
-    const conflictBusy = movement?.conflictIds.some((id) => occupiedMovements.has(id)) || false;
+    const conflictBusy = movement ? occupiedMovements.has(movement.id) || movement.conflictIds.some((id) => occupiedMovements.has(id)) : false;
     const isLast = vehicle.routeIndex >= vehicle.routeEdgeIds.length - 1;
     let targetSpeed = Math.min(config.defaultSpeedKmh, edge.speedKmh || config.defaultSpeedKmh) / 3.6;
     if (isLast) {
