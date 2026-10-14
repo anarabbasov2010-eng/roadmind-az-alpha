@@ -319,6 +319,16 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     ]
   ] as never;
   map.addLayer({
+    id: 'rm-osm-roads-sidewalk', type: 'line', source: 'rm-osm-roads',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#d7d3c9', 'line-width': ['+', roadWidth, 12] as never, 'line-opacity': 0.92 }
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-osm-roads-curb', type: 'line', source: 'rm-osm-roads',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#b1b0a7', 'line-width': ['+', roadWidth, 6] as never, 'line-opacity': 0.96 }
+  }, labelLayer);
+  map.addLayer({
     id: 'rm-osm-roads-casing', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': '#c5c8c0', 'line-width': ['+', roadWidth, 4.2] as never, 'line-opacity': 0.96 }
@@ -958,6 +968,8 @@ export default function App() {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
     const vis = (id: string, shown: boolean) => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', shown ? 'visible' : 'none'); };
+    vis('rm-osm-roads-sidewalk', showOsmRoads);
+    vis('rm-osm-roads-curb', showOsmRoads);
     vis('rm-osm-roads-casing', showOsmRoads);
     vis('rm-osm-roads-line', showOsmRoads);
     vis('rm-osm-road-markings', showOsmRoads);
