@@ -578,6 +578,9 @@ export default function App() {
   const [mode, setMode] = useState<ToolMode>('select');
   const [signals, setSignals] = useState<ScenarioSignal[]>(stored.signals || initialSignals());
   const [roads, setRoads] = useState<RoadDraft[]>(stored.roads || []);
+  const [roadDrawPoints, setRoadDrawPoints] = useState<Position[]>([]);
+  const [roadDrawLanes, setRoadDrawLanes] = useState(2);
+  const roadDrawPointsRef = useRef<Position[]>([]);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>((stored.signals || initialSignals())[0]?.id || null);
   const [selectedRoadId, setSelectedRoadId] = useState<string | null>(null);
   const [is3D, setIs3D] = useState(true);
@@ -966,27 +969,19 @@ export default function App() {
         return;
       }
       if (activeMode === 'road') {
-        if (!pendingRoadRef.current) {
-          const snappedStart = microNetworkRef.current ? nearestRoadNode(microNetworkRef.current.source, point, 20) : null;
-          pendingRoadRef.current = snappedStart?.coordinate || point;
-          flashToast(snappedStart ? 'Начало привязано к узлу сети. Выберите конец участка.' : 'Начало выбрано без привязки. Выберите конец участка.');
+        const points = roadDrawPointsRef.current;
+        const snapped = points.length === 0 && microNetworkRef.current ? nearestRoadNode(microNetworkRef.current.source, point, 20) : null;
+        const nextPoint = snapped?.coordinate || point;
+        if (points.length && Math.hypot((nextPoint[0] - points[points.length - 1][0]) * 80000, (nextPoint[1] - points[points.length - 1][1]) * 111000) < 5) {
+          flashToast('Слишком близко к предыдущей точке. Выберите точку дальше.');
           return;
         }
-        const first = pendingRoadRef.current;
-        const snappedStartConfirmed = microNetworkRef.current ? Boolean(nearestRoadNode(microNetworkRef.current.source, first, 0.5)) : false;
-        const snappedEnd = microNetworkRef.current ? nearestRoadNode(microNetworkRef.current.source, point, 20) : null;
-        const second = snappedEnd?.coordinate || point;
-        pendingRoadRef.current = null;
-        if (Math.hypot((second[0] - first[0]) * 80000, (second[1] - first[1]) * 111000) < 8) {
-          flashToast('Участок слишком короткий. Выберите точки подальше друг от друга.');
-          return;
-        }
-        const road: RoadDraft = { id: 'scenario-road-' + Date.now(), name: 'Новый участок ' + String(roadsRef.current.length + 1), coordinates: [first, second], lanes: 2 };
-        updateRoadDrafts([...roadsRef.current, road]);
-        setSelectedRoadId(road.id);
+        const nextPoints = [...points, nextPoint];
+        roadDrawPointsRef.current = nextPoints;
+        setRoadDrawPoints(nextPoints);
+        setSelectedRoadId(null);
         setSelectedSignalId(null);
-        setMode('select'); modeRef.current = 'select';
-        flashToast(snappedStartConfirmed && snappedEnd ? 'Оба конца привязаны к графу: участок участвует в симуляции.' : 'Участок сохранён, но один или оба конца не привязаны к существующему узлу сети.');
+        flashToast(nextPoints.length === 1 ? 'Начало задано. Добавляйте точки вдоль изгиба дороги.' : `Точек: ${nextPoints.length}. Добавьте форму дороги и нажмите «Завершить дорогу».`);
         return;
       }
       if (activeMode === 'erase') {
@@ -1198,10 +1193,12 @@ export default function App() {
 
   const changeMode = (next: ToolMode) => {
     pendingRoadRef.current = null;
+    roadDrawPointsRef.current = [];
+    setRoadDrawPoints([]);
     modeRef.current = next;
     setMode(next);
     if (next === 'signal') flashToast('Щёлкните по карте, чтобы добавить светофор в текущий сценарий.');
-    if (next === 'road') flashToast('Щёлкните по карте в начале и в конце нового участка.');
+    if (next === 'road') flashToast('Отмечайте точки дороги кликами по карте, затем завершите построение.');
     if (next === 'erase') flashToast('Можно удалять только собственные элементы сценария.');
   };
 
@@ -1340,7 +1337,27 @@ export default function App() {
             <button className={'tool-tile ' + (mode === 'road' ? 'selected' : '')} onClick={() => changeMode('road')}><Waypoints size={17} /><span>Участок</span></button>
             <button className={'tool-tile ' + (mode === 'erase' ? 'selected danger' : '')} onClick={() => changeMode('erase')}><Eraser size={17} /><span>Удаление</span><kbd>E</kbd></button>
           </div>
-          <div className="mode-hint">{mode === 'select' ? 'Перемещайте карту, выбирайте свои объекты.' : mode === 'signal' ? 'Разместите сценарный светофор на карте.' : mode === 'road' ? 'Отметьте начало и конец участка дороги.' : 'Удаляйте элементы, созданные в сценарии.'}</div>
+          <div className="mode-hint">{mode === 'select' ? 'Перемещайте карту, выбирайте свои объекты.' : mode === 'signal' ? 'Разместите сценарный светофор на карте.' : mode === 'road' ? 'Кликайте по карте, чтобы задать каждую точку и изгиб дороги.' : 'Удаляйте элементы, созданные в сценарии.'}</div>
+          {mode === 'road' && <div className="road-draw-controls">
+            <label htmlFor="road-lane-count">Полосы</label>
+            <select id="road-lane-count" value={roadDrawLanes} onChange={(event) => setRoadDrawLanes(Number(event.target.value))}>
+              <option value={1}>1 полоса</option><option value={2}>2 полосы</option><option value={3}>3 полосы</option><option value={4}>4 полосы</option><option value={6}>6 полос</option>
+            </select>
+            <div className="road-draw-count">Точек на маршруте: {roadDrawPoints.length}</div>
+            <button disabled={roadDrawPoints.length < 2} onClick={() => {
+              const points = roadDrawPointsRef.current;
+              if (points.length < 2) return;
+              const length = points.slice(1).reduce((sum, p, i) => sum + Math.hypot((p[0]-points[i][0])*80000, (p[1]-points[i][1])*111000), 0);
+              if (length < 8) { flashToast('Дорога слишком короткая. Добавьте точки подальше друг от друга.'); return; }
+              const road: RoadDraft = { id: 'scenario-road-' + Date.now(), name: 'Новый участок ' + String(roadsRef.current.length + 1), coordinates: points, lanes: roadDrawLanes };
+              updateRoadDrafts([...roadsRef.current, road]);
+              setSelectedRoadId(road.id); setSelectedSignalId(null);
+              roadDrawPointsRef.current = []; setRoadDrawPoints([]);
+              setMode('select'); modeRef.current = 'select';
+              flashToast('Дорога сохранена. Для работы в симуляции соединяйте её концы с узлами дорожной сети.');
+            }}>Завершить дорогу</button>
+            <button className="road-draw-cancel" onClick={() => { roadDrawPointsRef.current = []; setRoadDrawPoints([]); pendingRoadRef.current = null; flashToast('Построение дороги отменено.'); }}>Отменить</button>
+          </div>
 
           <div className="sidebar-divider" />
           <div className="sidebar-section-title">Слои карты</div>
