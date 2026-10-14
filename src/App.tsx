@@ -596,7 +596,7 @@ export default function App() {
     const [scenarioName, setScenarioName] = useState(stored.name || 'Баку · центральный узел');
   const [showOsmRoads, setShowOsmRoads] = useState(true);
   const [showOsmSignals, setShowOsmSignals] = useState(true);
-  const [showDemo, setShowDemo] = useState(true);
+  const [showDemo, setShowDemo] = useState(false);
   const [showCars, setShowCars] = useState(true);
   const [showUserSignals, setShowUserSignals] = useState(true);
   const [showBuildings, setShowBuildings] = useState(true);
@@ -604,6 +604,9 @@ export default function App() {
   const [comparison, setComparison] = useState<{ baseline: TrafficMetrics; current: TrafficMetrics } | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [history, setHistory] = useState<number[]>([]);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [desktopUpdate, setDesktopUpdate] = useState<{status:string;version?:string;message?:string;percent?:number}|null>(null);
 
   const selectedSignal = signals.find((signal) => signal.id === selectedSignalId) || null;
   const selectedRoad = roads.find((road) => road.id === selectedRoadId) || null;
@@ -618,6 +621,16 @@ export default function App() {
     setToast(message);
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 3200);
+  }, []);
+
+
+  useEffect(() => {
+    const desktop = (window as Window & { roadmindDesktop?: { checkForUpdates: () => Promise<unknown>; onUpdateStatus: (callback: (payload: {status:string;version?:string;message?:string}) => void) => () => void; onUpdateProgress: (callback: (payload: {percent:number}) => void) => () => void } }).roadmindDesktop;
+    if (!desktop) return;
+    const offStatus = desktop.onUpdateStatus((payload) => setDesktopUpdate(payload));
+    const offProgress = desktop.onUpdateProgress((payload) => setDesktopUpdate((current) => ({ ...(current || {status:'downloading'}), status:'downloading', percent:payload.percent })));
+    void desktop.checkForUpdates();
+    return () => { offStatus(); offProgress(); };
   }, []);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
