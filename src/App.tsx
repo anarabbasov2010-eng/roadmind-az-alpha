@@ -385,6 +385,17 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     ['+', 0.48, ['*', 0.24, ['min', 6, ['max', 1, ['to-number', ['get', 'lanes'], 2]]]]]
   ] as never;
   map.addLayer({
+    id: 'rm-osm-roads-3d-surface', type: 'fill-extrusion', source: 'rm-osm-roads', minzoom: 15.5,
+    filter: ['has', 'width'],
+    paint: {
+      'fill-extrusion-color': '#343a38',
+      'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 15.5, 0.06, 18, 0.18],
+      'fill-extrusion-base': 0.02,
+      'fill-extrusion-opacity': 0.82,
+      'fill-extrusion-vertical-gradient': false
+    }
+  }, labelLayer);
+  map.addLayer({
     id: 'rm-osm-roads-sidewalk', type: 'line', source: 'rm-osm-roads',
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
     paint: { 'line-color': '#d7d3c9', 'line-width': ['+', roadWidth, 12] as never, 'line-opacity': 0.92 }
