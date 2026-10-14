@@ -352,6 +352,8 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     }, labelLayer);
   }
 
+  map.addSource('rm-road-draft-preview', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'rm-road-draft-preview-line', type: 'line', source: 'rm-road-draft-preview', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4e8a5a', 'line-width': 4, 'line-dasharray': [1.2, 1.2] } });
   map.addSource('rm-demo-route', { type: 'geojson', data: {
     type: 'FeatureCollection',
     features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: DEMO_ROUTE }, properties: { label: 'Схематический тестовый маршрут' } }]
@@ -980,6 +982,8 @@ export default function App() {
         const nextPoints = [...points, nextPoint];
         roadDrawPointsRef.current = nextPoints;
         setRoadDrawPoints(nextPoints);
+        const preview = map.getSource('rm-road-draft-preview') as GeoJSONSource | undefined;
+        if (preview) preview.setData({ type: 'FeatureCollection', features: nextPoints.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: nextPoints } }] : [] } as never);
         setSelectedRoadId(null);
         setSelectedSignalId(null);
         flashToast(nextPoints.length === 1 ? 'Начало задано. Добавляйте точки вдоль изгиба дороги.' : `Точек: ${nextPoints.length}. Добавьте форму дороги и нажмите «Завершить дорогу».`);
