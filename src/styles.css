@@ -303,3 +303,28 @@ button:disabled { opacity: .55; cursor: wait !important; }
   transition: background .16s ease, border-color .16s ease;
 }
 .engineering-tools button:hover { background: #f0f5ee; border-color: #b9cbbb; }
+
+
+/* Desktop updater notice */
+.update-banner {
+  position: fixed;
+  z-index: 50;
+  right: 20px;
+  bottom: 54px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(540px, calc(100vw - 32px));
+  padding: 13px 14px;
+  border: 1px solid #cbd8cc;
+  border-radius: 12px;
+  background: rgba(250, 252, 248, .97);
+  box-shadow: 0 12px 36px rgba(22, 37, 27, .18);
+  color: #26352a;
+  backdrop-filter: blur(16px);
+}
+.update-banner > div { display: grid; gap: 4px; min-width: 0; }
+.update-banner strong { font-size: 12px; font-weight: 650; }
+.update-banner small { color: #68756b; font-size: 10px; line-height: 1.45; }
+.update-banner button { flex: 0 0 auto; border: 1px solid #c5d5c8; border-radius: 7px; padding: 7px 10px; background: #edf4ed; color: #34543b; font: inherit; font-size: 11px; cursor: pointer; }
+.update-banner .update-dismiss { align-self: flex-start; border: 0; padding: 0 3px; background: transparent; font-size: 18px; color: #6d796f; }
