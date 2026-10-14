@@ -316,7 +316,8 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     ['match', ['get', 'roadClass'],
       'motorway', 1.42, 'trunk', 1.3, 'primary', 1.18, 'secondary', 1.03,
       'tertiary', 0.88, 'unclassified', 0.76, 0.62
-    ]
+    ],
+    ['+', 0.48, ['*', 0.24, ['min', 6, ['max', 1, ['to-number', ['get', 'lanes'], 2]]]]]
   ] as never;
   map.addLayer({
     id: 'rm-osm-roads-sidewalk', type: 'line', source: 'rm-osm-roads',
