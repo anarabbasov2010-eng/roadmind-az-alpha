@@ -350,3 +350,12 @@ button:disabled { opacity: .55; cursor: wait !important; }
 .inspector-collapse-row strong { color: #526254; font-size: 11px; font-weight: 650; }
 .right-sidebar.inspector-collapsed { width: 155px; min-width: 155px; }
 .right-sidebar.inspector-collapsed > :not(.inspector-collapse-row) { display: none !important; }
+
+
+.road-draw-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 10px; margin: 8px 0; border: 1px solid #dfe8dc; border-radius: 9px; background: #f7faf5; }
+.road-draw-controls label { align-self: center; color: #687568; font-size: 10px; }
+.road-draw-controls select { min-width: 0; padding: 6px 8px; border: 1px solid #d9e2d7; border-radius: 6px; background: white; color: #354737; font: inherit; font-size: 11px; }
+.road-draw-controls .road-draw-count { grid-column: 1 / -1; color: #687568; font-size: 10px; }
+.road-draw-controls button { grid-column: 1 / -1; min-height: 30px; border: 1px solid #bdd0bd; border-radius: 6px; padding: 7px 8px; background: #eaf3e8; color: #35533a; font: inherit; font-size: 10px; cursor: pointer; }
+.road-draw-controls button:disabled { opacity: .45; cursor: not-allowed; }
+.road-draw-controls button.road-draw-cancel { background: white; color: #7b625b; border-color: #e4d9d5; }
