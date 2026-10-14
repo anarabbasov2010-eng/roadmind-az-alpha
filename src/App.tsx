@@ -1374,8 +1374,8 @@ export default function App() {
               setMode('select'); modeRef.current = 'select';
               flashToast('Дорога сохранена. Для работы в симуляции соединяйте её концы с узлами дорожной сети.');
             }}>Завершить дорогу</button>
-            <button className="road-draw-cancel" onClick={() => { roadDrawPointsRef.current = []; setRoadDrawPoints([]); pendingRoadRef.current = null; flashToast('Построение дороги отменено.'); }}>Отменить</button>
-          </div>
+            <button className="road-draw-cancel" onClick={() => { roadDrawPointsRef.current = []; setRoadDrawPoints([]); pendingRoadRef.current = null; (mapRef.current?.getSource('rm-road-draft-preview') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: [] } as never); flashToast('Построение дороги отменено.'); }}>Отменить</button>
+          </div>}
 
           <div className="sidebar-divider" />
           <div className="sidebar-section-title">Слои карты</div>
