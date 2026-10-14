@@ -34,7 +34,8 @@
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
     "wait-on": "^8.0.3",
-    "electron-updater": "^6.6.2"
+    "electron-updater": "^6.6.2",
+    "electron-log": "^5.4.3"
   },
   "build": {
     "appId": "az.roadmind.desktop",
