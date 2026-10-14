@@ -347,10 +347,8 @@ function roadEdgeStructures(roads: OSMRoad[]) {
     const half = carriagewayWidth / 2;
     const ribbon = (inner: number, outer: number): Position[] => {
       const a = offsetRoadLine(road.coordinates, inner);
-      const b = offsetRoadLine(road.coordinates, outer);
-      const c = offsetRoadLine(road.coordinates, -outer).reverse();
-      const d = offsetRoadLine(road.coordinates, -inner).reverse();
-      const ring = [...a, ...b.slice().reverse(), ...c, ...d.slice().reverse()];
+      const b = offsetRoadLine(road.coordinates, outer).reverse();
+      const ring = [...a, ...b];
       return ring.length >= 4 ? [...ring, ring[0]] : [];
     };
     const leftSidewalk = ribbon(half + 0.25, half + 2.0);
