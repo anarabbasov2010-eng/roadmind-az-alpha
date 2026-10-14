@@ -985,7 +985,19 @@ export default function App() {
 
   useEffect(() => {
     if (!isRunning || mapStatus !== 'ready') return;
-    const timer = window.setInterval(() => {
+    let frame = 0;
+    let previousFrame = 0;
+    let lastUiUpdate = 0;
+    let lastHistoryBucket = -1;
+    const animate = (timestamp: number) => {
+      if (document.visibilityState !== 'visible') {
+        previousFrame = timestamp;
+        frame = window.requestAnimationFrame(animate);
+        return;
+      }
+      const elapsed = previousFrame ? Math.min(0.05, (timestamp - previousFrame) / 1000) : 1 / 60;
+      previousFrame = timestamp;
+      const dt = elapsed * speedMultiplier;
       const microNetwork = microNetworkRef.current;
       const currentMicro = microStateRef.current;
       if (microNetwork && currentMicro && currentMicro.vehicles.length) {
@@ -993,7 +1005,7 @@ export default function App() {
           const nodeId = scenarioSignalNodeMapRef.current.get(signal.id);
           if (nodeId) configureScenarioSignal(microNetwork, nodeId, signal);
         }
-        const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...microConfigRef.current, defaultSpeedKmh: speedLimit }, 0.1 * speedMultiplier);
+        const nextMicro = stepMicroSimulation(microNetwork, currentMicro, { ...microConfigRef.current, defaultSpeedKmh: speedLimit }, dt);
         microStateRef.current = nextMicro;
         (mapRef.current?.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microVehicleCollection(microNetwork, nextMicro) as never);
         const signalSecond = Math.floor(nextMicro.timeSeconds);
@@ -1002,16 +1014,23 @@ export default function App() {
           (mapRef.current?.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(osmSignals, microNetwork, nextMicro.timeSeconds) as never);
         }
       }
-      const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, 0.1 * speedMultiplier, simulationRouteLengthKmRef.current);
+      const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, dt, simulationRouteLengthKmRef.current);
       trafficRef.current = next;
-      setTraffic(next);
-      if (Math.floor(next.time / 8) > Math.floor((next.time - 0.1 * speedMultiplier) / 8)) {
-        const currentMicro = microStateRef.current;
-        const value = currentMicro && currentMicro.vehicles.length ? microMetricsFor(currentMicro).queueMeters : metricsFor(next).queueMeters;
+      if (timestamp - lastUiUpdate >= 200) {
+        lastUiUpdate = timestamp;
+        setTraffic(next);
+      }
+      const bucket = Math.floor(next.time / 8);
+      if (bucket > lastHistoryBucket) {
+        lastHistoryBucket = bucket;
+        const current = microStateRef.current;
+        const value = current && current.vehicles.length ? microMetricsFor(current).queueMeters : metricsFor(next).queueMeters;
         setHistory((previous) => [...previous, value].slice(-30));
       }
-    }, 100);
-    return () => window.clearInterval(timer);
+      frame = window.requestAnimationFrame(animate);
+    };
+    frame = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frame);
   }, [isRunning, mapStatus, speedLimit, speedMultiplier, osmSignals]);
 
   useEffect(() => {
