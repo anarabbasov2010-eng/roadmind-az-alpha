@@ -136,14 +136,34 @@ function carsCollection(state: TrafficState, route: Position[] = DEMO_ROUTE): Fe
 }
 
 function crossingCollection(crossings: OSMCrossing[]): FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: crossings.map((crossing) => ({
-      type: 'Feature', id: crossing.id,
-      geometry: { type: 'LineString', coordinates: crossing.coordinates },
-      properties: { name: crossing.name }
-    }))
-  };
+  const features: GeoFeature[] = [];
+  for (const crossing of crossings) {
+    const points = crossing.coordinates;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const lat = (a[1] + b[1]) * 0.5;
+      const xScale = 111320 * Math.max(0.2, Math.cos(lat * Math.PI / 180));
+      const dx = (b[0] - a[0]) * xScale, dy = (b[1] - a[1]) * 110540;
+      const length = Math.hypot(dx, dy);
+      if (length < 1.5) continue;
+      const nx = -dy / length, ny = dx / length;
+      // OSM crossing ways generally trace the direction across the carriageway.
+      // Generate short transverse bars across that way to create a zebra pattern.
+      for (let along = 0.35; along < length; along += 0.72) {
+        const t = along / length;
+        const cx = a[0] + (b[0] - a[0]) * t, cy = a[1] + (b[1] - a[1]) * t;
+        const halfWidth = 1.65;
+        const start: Position = [cx - nx * halfWidth / xScale, cy - ny * halfWidth / 110540];
+        const end: Position = [cx + nx * halfWidth / xScale, cy + ny * halfWidth / 110540];
+        features.push({
+          type: 'Feature', id: crossing.id + '-stripe-' + i + '-' + Math.round(along * 100),
+          geometry: { type: 'LineString', coordinates: [start, end] },
+          properties: { name: crossing.name }
+        });
+      }
+    }
+  }
+  return { type: 'FeatureCollection', features };
 }
 
 function importedRoadCollection(roads: OSMRoad[]): FeatureCollection {
