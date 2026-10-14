@@ -607,6 +607,8 @@ export default function App() {
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [desktopUpdate, setDesktopUpdate] = useState<{status:string;version?:string;message?:string;percent?:number}|null>(null);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
 
   const selectedSignal = signals.find((signal) => signal.id === selectedSignalId) || null;
   const selectedRoad = roads.find((road) => road.id === selectedRoadId) || null;
@@ -1403,7 +1405,7 @@ export default function App() {
           {mapStatus === 'error' && <div className="map-error"><AlertTriangle size={17} /><strong>Не удалось загрузить карту</strong><p>Проверьте подключение к интернету. Онлайн-тайлы карты недоступны.</p><button onClick={() => window.location.reload()}><RefreshCw size={14} />Повторить</button></div>}
         </section>
 
-        <aside className="right-sidebar">
+        <aside className={"right-sidebar " + (inspectorCollapsed ? "inspector-collapsed" : "")}>\n          <div className="inspector-collapse-row"><strong>Сценарий</strong><button className="collapse-panel-button" onClick={() => setInspectorCollapsed((v) => !v)}>{inspectorCollapsed ? "Развернуть" : "Свернуть"}</button></div>
           <div className="inspector-header"><div><span className="section-eyebrow">SCENARIO INSPECTOR</span><h2>Сценарий</h2></div><button className="icon-button" title="Сбросить" onClick={resetScenario}><RotateCcw size={15} /></button></div>
           <div className="scenario-card"><div className="scenario-topline"><span>Текущий сценарий</span><span className="draft-badge"><i />Черновик</span></div><input aria-label="Название сценария" value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /><div className="scenario-footer"><span><Clock3 size={12} /> Автосохранение на этом компьютере</span></div></div>
 
