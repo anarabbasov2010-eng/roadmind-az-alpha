@@ -19,6 +19,7 @@ type ToolMode = 'select' | 'signal' | 'road' | 'erase';
 type RoadDraft = { id: string; name: string; coordinates: Position[]; lanes: number };
 type OSMRoad = RoadInput;
 type OSMSignal = { id: number; name: string; coordinates: Position; direction?: string };
+type OSMCrossing = { id: number; coordinates: Position[]; name: string };
 type GeoFeature = {
   type: 'Feature';
   id?: string | number;
@@ -131,6 +132,17 @@ function carsCollection(state: TrafficState, route: Position[] = DEMO_ROUTE): Fe
         properties: { id: vehicle.id, bearing, speedKmh: Math.max(0, Math.round(vehicle.speedKmh)), stopped: vehicle.stopped, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
       };
     })
+  };
+}
+
+function crossingCollection(crossings: OSMCrossing[]): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: crossings.map((crossing) => ({
+      type: 'Feature', id: crossing.id,
+      geometry: { type: 'LineString', coordinates: crossing.coordinates },
+      properties: { name: crossing.name }
+    }))
   };
 }
 
@@ -330,6 +342,17 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
   map.addLayer({ id: 'rm-simulation-route-casing', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 6, 19, 8], 'line-opacity': 0.32 } });
   map.addLayer({ id: 'rm-simulation-route-line', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.3, 16, 2.1, 19, 2.8], 'line-opacity': 0.92, 'line-dasharray': [2, 1.6] } });
 
+  map.addSource('rm-osm-crossings', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({
+    id: 'rm-osm-crossing-base', type: 'line', source: 'rm-osm-crossings',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#f5f2e8', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.5, 17, 7], 'line-opacity': 0.98 }
+  }, labelLayer);
+  map.addLayer({
+    id: 'rm-osm-crossing-stripes', type: 'line', source: 'rm-osm-crossings',
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: { 'line-color': '#8f9990', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.7, 17, 1.8], 'line-dasharray': [0.7, 1.4], 'line-opacity': 0.9 }
+  }, labelLayer);
   map.addSource('rm-osm-roads', { type: 'geojson', data: emptyCollection() as never });
   const roadWidth = ['*',
     ['interpolate', ['linear'], ['zoom'], 10, 0.8, 13, 2.6, 16, 6.5, 19, 10.5],
@@ -710,6 +733,8 @@ export default function App() {
       const east = (center.lng + halfLon).toFixed(5);
       const query = '[out:json][timeout:25];(' +
         'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|busway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|residential_link|living_street|pedestrian)$"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'way["footway"="crossing"](' + south + ',' + west + ',' + north + ',' + east + ');' +
+        'way["highway"="footway"]["crossing"="marked"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'node["highway"="traffic_signals"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         'relation["type"="restriction"](' + south + ',' + west + ',' + north + ',' + east + ');' +
         ');out body geom;';
@@ -729,9 +754,19 @@ export default function App() {
       }
       if (!payload || !Array.isArray(payload.elements)) throw lastError || new Error('Пустой ответ OpenStreetMap');
       const parsedRoads: OSMRoad[] = [];
+      const parsedCrossings: OSMCrossing[] = [];
       const parsedSignals: OSMSignal[] = [];
       const parsedRestrictions: Array<{ fromWayId: number; toWayId: number; viaNodeId: string; restriction: string; fromDirection?: 1 | -1; toDirection?: 1 | -1 }> = [];
       for (const element of payload.elements) {
+        if (element.type === 'way' && element.geometry && element.geometry.length > 1 &&
+            (element.tags?.footway === 'crossing' || element.tags?.crossing === 'marked')) {
+          parsedCrossings.push({
+            id: element.id,
+            name: element.tags.name || 'Пешеходный переход',
+            coordinates: element.geometry.map((point) => [point.lon, point.lat] as Position)
+          });
+          continue;
+        }
         if (element.type === 'way' && element.geometry && element.geometry.length > 1 && element.tags?.highway) {
           parsedRoads.push({
             id: element.id, name: element.tags.name || element.tags.ref || element.tags.highway,
@@ -783,6 +818,8 @@ export default function App() {
       setOsmStatus('ok');
       setShowOsmRoads(true);
       setShowOsmSignals(true);
+      const crossingSource = map.getSource('rm-osm-crossings') as GeoJSONSource | undefined;
+      crossingSource?.setData(crossingCollection(parsedCrossings) as never);
       const roadSource = map.getSource('rm-osm-roads') as GeoJSONSource | undefined;
       roadSource?.setData(importedRoadCollection(roadsCapped) as never);
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
@@ -996,6 +1033,8 @@ export default function App() {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
     const vis = (id: string, shown: boolean) => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', shown ? 'visible' : 'none'); };
+    vis('rm-osm-crossing-base', showOsmRoads);
+    vis('rm-osm-crossing-stripes', showOsmRoads);
     vis('rm-osm-roads-sidewalk', showOsmRoads);
     vis('rm-osm-roads-curb', showOsmRoads);
     vis('rm-osm-roads-casing', showOsmRoads);
