@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildRoadNetwork } from '../src/road-graph.ts';
 import {
-  buildMicroNetwork, createMicroState, stepMicroSimulation, signalStateAt,
+  buildMicroNetwork, createMicroState, stepMicroSimulation, signalStateAt, DEFAULT_MICRO_CONFIG,
   parseCalibrationCsv, calibrateMicroConfig, vehiclePosition
 } from '../src/microsim.ts';
 
@@ -179,4 +179,19 @@ test('scenario signal overrides control its junction but imported plans stay aut
   configureScenarioSignal(micro, nodeId, { cycleSeconds: 100, greenShare: 0.4, offsetSeconds: 50, manualState: 'green' });
   assert.equal(controller.cycleOffsetSeconds, previousOffset);
   assert.equal(controller.forcedState, null);
+});
+
+
+test('stress simulation keeps connector occupancy exclusive and vehicle state finite', () => {
+  const micro = buildMicroNetwork(squareNetwork());
+  let state = createMicroState(micro, { vehicleCount: 180, defaultSpeedKmh: 45, desiredHeadwaySeconds: 1.6, standstillGapMeters: 2.5 });
+  for (let tick = 0; tick < 1800; tick++) {
+    state = stepMicroSimulation(micro, state, { ...DEFAULT_MICRO_CONFIG, defaultSpeedKmh: 45, desiredHeadwaySeconds: 1.6, standstillGapMeters: 2.5 }, 0.1);
+    const active = state.vehicles.map((vehicle) => vehicle.activeMovementId).filter(Boolean);
+    assert.equal(new Set(active).size, active.length, 'a connector must not contain multiple vehicles at once');
+    for (const vehicle of state.vehicles) {
+      assert.ok(Number.isFinite(vehicle.speedMps) && vehicle.speedMps >= 0, 'speed remains finite and non-negative');
+      assert.ok(Number.isFinite(vehicle.distanceOnEdge) && vehicle.distanceOnEdge >= 0, 'edge distance remains finite and non-negative');
+    }
+  }
 });
