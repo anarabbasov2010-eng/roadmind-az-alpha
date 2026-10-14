@@ -229,12 +229,22 @@ export function createMicroState(net: MicroNetwork, config: MicroConfig = DEFAUL
   // Only seed vehicles on lane states that have a real, lane-compatible continuation.
   // Randomly picking dead-end or isolated edges was creating stranded clusters on half-loaded maps.
   const startCandidates: Array<{ edge: NetworkEdge; lane: number; route: { edgeIds: string[]; laneIndices: number[] } }> = [];
+  const laneStarts: Array<{ edge: NetworkEdge; lane: number }> = [];
   for (const edge of net.source.edges) {
-    if (edge.lengthMeters <= 24 || edge.lanes <= 0) continue;
+    if (edge.lengthMeters <= 24 || edge.lanes <= 0 || !(net.movementsByIncomingEdge.get(edge.id) || []).length) continue;
     for (let lane = 0; lane < laneCount(edge); lane++) {
-      const route = findRoute(net, edge, random, lane);
-      if (route.edgeIds.length >= 3 && route.laneIndices.length === route.edgeIds.length) startCandidates.push({ edge, lane, route });
+      if ((net.movementsByIncomingEdge.get(edge.id) || []).some((movement) => movement.fromLane === lane)) laneStarts.push({ edge, lane });
     }
+  }
+  // Bound route-search work on city-scale graphs; choose a deterministic shuffled sample
+  // of plausible lane starts instead of running a full BFS for every lane in the map.
+  for (let i = laneStarts.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [laneStarts[i], laneStarts[j]] = [laneStarts[j], laneStarts[i]];
+  }
+  for (const start of laneStarts.slice(0, 240)) {
+    const route = findRoute(net, start.edge, random, start.lane);
+    if (route.edgeIds.length >= 3 && route.laneIndices.length === route.edgeIds.length) startCandidates.push({ ...start, route });
   }
   const vehicles: MicroVehicle[] = [];
   const laneSpacing = Math.max(12, config.defaultSpeedKmh / 3.6 * config.desiredHeadwaySeconds + config.standstillGapMeters);
