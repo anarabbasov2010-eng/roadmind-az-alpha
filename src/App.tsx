@@ -16,7 +16,7 @@ import {
 } from './traffic';
 
 type ToolMode = 'select' | 'signal' | 'road' | 'erase';
-type RoadDraft = { id: string; name: string; coordinates: Position[]; lanes: number };
+type RoadDraft = { id: string; name: string; coordinates: Position[]; lanes: number; direction?: 'both' | 'forward' | 'backward' };
 type OSMRoad = RoadInput;
 type OSMSignal = { id: number; name: string; coordinates: Position; direction?: string };
 type OSMCrossing = { id: number; coordinates: Position[]; name: string };
@@ -580,6 +580,7 @@ export default function App() {
   const [roads, setRoads] = useState<RoadDraft[]>(stored.roads || []);
   const [roadDrawPoints, setRoadDrawPoints] = useState<Position[]>([]);
   const [roadDrawLanes, setRoadDrawLanes] = useState(2);
+  const [roadDrawDirection, setRoadDrawDirection] = useState<'both' | 'forward' | 'backward'>('both');
   const roadDrawPointsRef = useRef<Position[]>([]);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>((stored.signals || initialSignals())[0]?.id || null);
   const [selectedRoadId, setSelectedRoadId] = useState<string | null>(null);
@@ -691,7 +692,7 @@ export default function App() {
         return node?.id.startsWith('n') ? Number(node.id.slice(1)) : undefined;
       }),
       lanes: String(draft.lanes),
-      oneway: 'no'
+      oneway: draft.direction === 'forward' ? 'yes' : draft.direction === 'backward' ? '-1' : 'no'
     }));
     const network = buildRoadNetwork([...sourceRoads, ...draftInputs]);
     const signalNodeIds = new Set(sourceSignals.map((signal) => 'n' + signal.id));
@@ -1343,13 +1344,13 @@ export default function App() {
             <select id="road-lane-count" value={roadDrawLanes} onChange={(event) => setRoadDrawLanes(Number(event.target.value))}>
               <option value={1}>1 полоса</option><option value={2}>2 полосы</option><option value={3}>3 полосы</option><option value={4}>4 полосы</option><option value={6}>6 полос</option>
             </select>
-            <div className="road-draw-count">Точек на маршруте: {roadDrawPoints.length}</div>
+            <label htmlFor="road-direction">Движение</label><select id="road-direction" value={roadDrawDirection} onChange={(event) => setRoadDrawDirection(event.target.value as 'both' | 'forward' | 'backward')}><option value="both">В обе стороны</option><option value="forward">По направлению рисования</option><option value="backward">Против рисования</option></select><div className="road-draw-count">Точек на маршруте: {roadDrawPoints.length}</div>
             <button disabled={roadDrawPoints.length < 2} onClick={() => {
               const points = roadDrawPointsRef.current;
               if (points.length < 2) return;
               const length = points.slice(1).reduce((sum, p, i) => sum + Math.hypot((p[0]-points[i][0])*80000, (p[1]-points[i][1])*111000), 0);
               if (length < 8) { flashToast('Дорога слишком короткая. Добавьте точки подальше друг от друга.'); return; }
-              const road: RoadDraft = { id: 'scenario-road-' + Date.now(), name: 'Новый участок ' + String(roadsRef.current.length + 1), coordinates: points, lanes: roadDrawLanes };
+              const road: RoadDraft = { id: 'scenario-road-' + Date.now(), name: 'Новый участок ' + String(roadsRef.current.length + 1), coordinates: points, lanes: roadDrawLanes, direction: roadDrawDirection };
               updateRoadDrafts([...roadsRef.current, road]);
               setSelectedRoadId(road.id); setSelectedSignalId(null);
               roadDrawPointsRef.current = []; setRoadDrawPoints([]);
