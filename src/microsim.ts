@@ -52,10 +52,34 @@ function classifyTurn(a: number, b: number): TurnKind {
   return d > 32 ? 'right' : d < -32 ? 'left' : 'through';
 }
 function mix(a: Position, b: Position, t: number): Position { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+function pointAlongEdge(edge: NetworkEdge, distanceMeters: number): Position {
+  const points = edge.geometry;
+  if (points.length < 2) return points[0] || [0, 0];
+  let remaining = clamp(distanceMeters, 0, edgeLen(edge));
+  for (let i = 1; i < points.length; i++) {
+    const segmentLength = distance(points[i - 1], points[i]);
+    if (remaining <= segmentLength || i === points.length - 1) {
+      const t = segmentLength > 0 ? clamp(remaining / segmentLength, 0, 1) : 0;
+      return mix(points[i - 1], points[i], t);
+    }
+    remaining -= segmentLength;
+  }
+  return points[points.length - 1];
+}
 function lanePoint(edge: NetworkEdge, point: Position, laneIndex: number): Position {
-  const a = edge.geometry[0], b = edge.geometry[edge.geometry.length - 1];
+  // Use the local segment tangent nearest the supplied point, not the chord from
+  // the first to last road vertex. This keeps vehicles and lane offsets on curved roads.
   const latitude = point[1] * RAD, xScale = 111320 * Math.max(0.15, Math.cos(latitude));
-  const dx = (b[0] - a[0]) * xScale, dy = (b[1] - a[1]) * 110540;
+  let bestDistance = Infinity, dx = 0, dy = 1;
+  for (let i = 1; i < edge.geometry.length; i++) {
+    const a = edge.geometry[i - 1], b = edge.geometry[i];
+    const sx = (b[0] - a[0]) * xScale, sy = (b[1] - a[1]) * 110540;
+    const px = (point[0] - a[0]) * xScale, py = (point[1] - a[1]) * 110540;
+    const lengthSq = sx * sx + sy * sy || 1;
+    const t = clamp((px * sx + py * sy) / lengthSq, 0, 1);
+    const distSq = (px - sx * t) ** 2 + (py - sy * t) ** 2;
+    if (distSq < bestDistance) { bestDistance = distSq; dx = sx; dy = sy; }
+  }
   const length = Math.hypot(dx, dy) || 1;
   const offset = (edge.carriagewayOffsetMeters || 0) + (laneIndex - (laneCount(edge) - 1) / 2) * 3.25;
   return [point[0] - (dy / length) * offset / xScale, point[1] + (dx / length) * offset / 110540];
@@ -280,8 +304,7 @@ export function vehiclePosition(net: MicroNetwork, vehicle: MicroVehicle): Posit
       return movement.geometry[movement.geometry.length - 1];
     }
   }
-  const t = clamp(vehicle.distanceOnEdge / edgeLen(edge), 0, 1);
-  const center = mix(edge.geometry[0], edge.geometry[edge.geometry.length - 1], t);
+  const center = pointAlongEdge(edge, vehicle.distanceOnEdge);
   if (vehicle.laneChangeFrom !== undefined && vehicle.laneChangeFrom !== null && vehicle.laneChangeTo !== undefined && vehicle.laneChangeTo !== null && (vehicle.laneChangeProgress || 0) < 1) {
     const fromPoint = lanePoint(edge, center, vehicle.laneChangeFrom);
     const toPoint = lanePoint(edge, center, vehicle.laneChangeTo);
