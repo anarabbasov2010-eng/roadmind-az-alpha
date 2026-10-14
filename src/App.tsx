@@ -335,6 +335,41 @@ function roadSurfaceCollection(roads: OSMRoad[]) {
   return { type: 'FeatureCollection' as const, features };
 }
 
+
+function roadEdgeStructures(roads: OSMRoad[]) {
+  const sidewalks: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+  const curbs: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+  for (const road of roads) {
+    if (road.coordinates.length < 2 || ['footway', 'pedestrian', 'path', 'steps', 'cycleway'].includes(road.highway)) continue;
+    const parsedWidth = Number.parseFloat((road.width || '').replace('m', ''));
+    const lanes = Math.max(1, Math.min(8, Number.parseInt(road.lanes || '', 10) || (['motorway', 'trunk', 'primary', 'secondary'].includes(road.highway) ? 2 : 1)));
+    const carriagewayWidth = Number.isFinite(parsedWidth) && parsedWidth >= 2 && parsedWidth <= 60 ? parsedWidth : lanes * 3.2;
+    const half = carriagewayWidth / 2;
+    const ribbon = (inner: number, outer: number): Position[] => {
+      const a = offsetRoadLine(road.coordinates, inner);
+      const b = offsetRoadLine(road.coordinates, outer);
+      const c = offsetRoadLine(road.coordinates, -outer).reverse();
+      const d = offsetRoadLine(road.coordinates, -inner).reverse();
+      const ring = [...a, ...b.slice().reverse(), ...c, ...d.slice().reverse()];
+      return ring.length >= 4 ? [...ring, ring[0]] : [];
+    };
+    const leftSidewalk = ribbon(half + 0.25, half + 2.0);
+    const rightSidewalk = ribbon(-(half + 0.25), -(half + 2.0));
+    const leftCurb = ribbon(half, half + 0.22);
+    const rightCurb = ribbon(-half, -(half + 0.22));
+    for (const [side, ring] of [['L', leftSidewalk], ['R', rightSidewalk]] as const) {
+      if (ring.length) sidewalks.push({ type: 'Feature', properties: { roadId: road.id, side, estimatedWidth: 1.75 }, geometry: { type: 'Polygon', coordinates: [ring] } });
+    }
+    for (const [side, ring] of [['L', leftCurb], ['R', rightCurb]] as const) {
+      if (ring.length) curbs.push({ type: 'Feature', properties: { roadId: road.id, side, estimatedWidth: 0.22 }, geometry: { type: 'Polygon', coordinates: [ring] } });
+    }
+  }
+  return {
+    sidewalks: { type: 'FeatureCollection' as const, features: sidewalks },
+    curbs: { type: 'FeatureCollection' as const, features: curbs }
+  };
+}
+
 function addMapLayers(map: MapLibreMap, signals: ScenarioSignal[]): Promise<void> {
   // Image loading is handled before the layers are registered.
   return addMapLayersWithAssets(map, signals);
@@ -399,6 +434,10 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
     paint: { 'line-color': '#8f9990', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.7, 17, 1.8], 'line-opacity': 0.9 }
   }, labelLayer);
+  map.addSource('rm-osm-sidewalks-3d', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({ id: 'rm-osm-sidewalks-3d', type: 'fill-extrusion', source: 'rm-osm-sidewalks-3d', minzoom: 15, paint: { 'fill-extrusion-color': '#c8c5ba', 'fill-extrusion-height': 0.18, 'fill-extrusion-base': 0.02, 'fill-extrusion-opacity': 0.96, 'fill-extrusion-vertical-gradient': false } }, labelLayer);
+  map.addSource('rm-osm-curbs-3d', { type: 'geojson', data: emptyCollection() as never });
+  map.addLayer({ id: 'rm-osm-curbs-3d', type: 'fill-extrusion', source: 'rm-osm-curbs-3d', minzoom: 15, paint: { 'fill-extrusion-color': '#8d918a', 'fill-extrusion-height': 0.22, 'fill-extrusion-base': 0.02, 'fill-extrusion-opacity': 1, 'fill-extrusion-vertical-gradient': false } }, labelLayer);
   map.addSource('rm-osm-road-surfaces-3d', { type: 'geojson', data: emptyCollection() as never });
   map.addLayer({
     id: 'rm-osm-road-surfaces-3d', type: 'fill-extrusion', source: 'rm-osm-road-surfaces-3d', minzoom: 15,
@@ -900,6 +939,10 @@ export default function App() {
       const roadSource = map.getSource('rm-osm-roads') as GeoJSONSource | undefined;
       roadSource?.setData(importedRoadCollection(roadsCapped) as never);
       (map.getSource('rm-osm-road-surfaces-3d') as GeoJSONSource | undefined)?.setData(roadSurfaceCollection(roadsCapped) as never);
+      const edgeStructures = roadEdgeStructures(roadsCapped);
+      (map.getSource('rm-osm-sidewalks-3d') as GeoJSONSource | undefined)?.setData(edgeStructures.sidewalks as never);
+      (map.getSource('rm-osm-curbs-3d') as GeoJSONSource | undefined)?.setData(edgeStructures.curbs as never);
+
       const laneSource = map.getSource('rm-osm-lane-markings') as GeoJSONSource | undefined;
       laneSource?.setData(laneMarkingCollection(roadsCapped) as never);
       const rebuilt = rebuildMicroNetwork(roadsRef.current, roadsCapped, signalsCapped, parsedRestrictions);
@@ -1134,6 +1177,9 @@ export default function App() {
     vis('rm-osm-crossing-base', showOsmRoads);
     vis('rm-osm-crossing-stripes', showOsmRoads);
     vis('rm-osm-roads-sidewalk', showOsmRoads);
+    vis('rm-osm-sidewalks-3d', showOsmRoads);
+    vis('rm-osm-curbs-3d', showOsmRoads);
+    vis('rm-osm-road-surfaces-3d', showOsmRoads);
     vis('rm-osm-roads-curb', showOsmRoads);
     vis('rm-osm-roads-casing', showOsmRoads);
     vis('rm-osm-roads-line', showOsmRoads);
