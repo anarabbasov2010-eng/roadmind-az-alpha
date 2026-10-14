@@ -225,16 +225,31 @@ function findRoute(net: MicroNetwork, startEdge: NetworkEdge, random: () => numb
 }
 export function createMicroState(net: MicroNetwork, config: MicroConfig = DEFAULT_MICRO_CONFIG): MicroState {
   const random = randomFor(config.seed);
-  const edges = net.source.edges.filter((edge) => edge.lengthMeters > 18 && edge.lanes > 0);
+  // Only seed vehicles on lane states that have a real, lane-compatible continuation.
+  // Randomly picking dead-end or isolated edges was creating stranded clusters on half-loaded maps.
+  const startCandidates: Array<{ edge: NetworkEdge; lane: number; route: { edgeIds: string[]; laneIndices: number[] } }> = [];
+  for (const edge of net.source.edges) {
+    if (edge.lengthMeters <= 24 || edge.lanes <= 0) continue;
+    for (let lane = 0; lane < laneCount(edge); lane++) {
+      const route = findRoute(net, edge, random, lane);
+      if (route.edgeIds.length >= 3 && route.laneIndices.length === route.edgeIds.length) startCandidates.push({ edge, lane, route });
+    }
+  }
   const vehicles: MicroVehicle[] = [];
+  const laneSpacing = Math.max(12, config.defaultSpeedKmh / 3.6 * config.desiredHeadwaySeconds + config.standstillGapMeters);
+  const laneOccupancy = new Map<string, number>();
   for (let i = 0; i < clamp(config.vehicleCount, 0, 500); i++) {
-    if (!edges.length) break;
-    const edge = edges[Math.floor(random() * edges.length)];
-    const initialLane = Math.floor(random() * laneCount(edge));
-    const route = findRoute(net, edge, random, initialLane);
-    if (!route.edgeIds.length) continue;
+    if (!startCandidates.length) break;
+    const candidate = startCandidates[Math.floor(random() * startCandidates.length)];
+    const edge = candidate.edge, initialLane = candidate.lane, route = candidate.route;
+    const occupancyKey = edge.id + ':' + initialLane;
+    const slot = laneOccupancy.get(occupancyKey) || 0;
+    // Deterministic stagger avoids starting multiple cars almost on top of each other.
+    const usableLength = Math.max(0, Math.min(edge.lengthMeters - 12, 90));
+    const distanceOnEdge = Math.min(usableLength, 8 + slot * laneSpacing + random() * Math.min(4, laneSpacing * 0.25));
+    laneOccupancy.set(occupancyKey, slot + 1);
     vehicles.push({ id: i + 1, routeEdgeIds: route.edgeIds, routeLaneIndices: route.laneIndices, routeIndex: 0, tripBoundaryIndex: route.edgeIds.length - 1, laneIndex: route.laneIndices[0],
-      distanceOnEdge: random() * Math.min(edge.lengthMeters * 0.7, 45), speedMps: random() * 2.5, accelerationMps2: 0,
+      distanceOnEdge, speedMps: random() * 1.5, accelerationMps2: 0,
       stoppedSeconds: 0, delaySeconds: 0, activeMovementId: null, connectorDistance: 0, completedTrips: 0 });
   }
   return { timeSeconds: 0, vehicles, completedTrips: 0, totalDelaySeconds: 0 };
