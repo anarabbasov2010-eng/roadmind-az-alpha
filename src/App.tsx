@@ -937,7 +937,7 @@ export default function App() {
     const source = map.getSource('rm-user-roads') as GeoJSONSource | undefined;
     if (!source) return;
     const added = roads.filter((road) => !previous.some((oldRoad) => oldRoad.id === road.id));
-    if (added.length !== 1 || previous.length === 0) {
+    if (added.length !== 1) {
       source.setData(roadCollection(roads) as never);
       return;
     }
