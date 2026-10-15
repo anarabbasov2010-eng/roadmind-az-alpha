@@ -676,6 +676,7 @@ export default function App() {
     const [scenarioName, setScenarioName] = useState(stored.name || 'Баку · центральный узел');
   const [showOsmRoads, setShowOsmRoads] = useState(true);
   const [showOsmSignals, setShowOsmSignals] = useState(true);
+  const [showSpeedCameras, setShowSpeedCameras] = useState(true);
   const [showDemo, setShowDemo] = useState(false);
   const [showCars, setShowCars] = useState(true);
   const [showUserSignals, setShowUserSignals] = useState(true);
@@ -1197,7 +1198,7 @@ export default function App() {
     vis('rm-road-graph-lane-centres', showOsmRoads);
     vis('rm-road-graph-lane-edges', showOsmRoads);
     vis('rm-road-graph-intersections', showOsmRoads);
-    vis('rm-osm-speed-camera-points', showOsmSignals);
+    vis('rm-osm-speed-camera-points', showSpeedCameras);
     vis('rm-osm-signal-halo', showOsmSignals);
     vis('rm-osm-signal-points', showOsmSignals);
     vis('rm-demo-casing', showDemo);
@@ -1213,7 +1214,7 @@ export default function App() {
     vis('rm-user-road-line', true);
     vis('rm-user-road-marking', true);
     vis('rm-3d-buildings', showBuildings && is3D);
-  }, [showOsmRoads, showOsmSignals, showDemo, showCars, showUserSignals, showBuildings, is3D, mapStatus]);
+  }, [showOsmRoads, showOsmSignals, showSpeedCameras, showDemo, showCars, showUserSignals, showBuildings, is3D, mapStatus]);
 
   useEffect(() => {
     if (!isRunning || mapStatus !== 'ready') return;
@@ -1487,6 +1488,7 @@ export default function App() {
           <LayerToggle icon={<Building2 size={15} />} label="3D-застройка" detail="Доступные данные OpenFreeMap" checked={showBuildings && is3D} onChange={(value) => { setShowBuildings(value); if (value && !is3D) toggle3D(true); }} />
           <LayerToggle icon={<Waypoints size={15} />} label="OSM · дороги" detail={osmRoads.length ? osmRoads.length + ' геометрий загружено' : 'Загрузка по текущему району'} checked={showOsmRoads} onChange={setShowOsmRoads} />
           <LayerToggle icon={<RadioTower size={15} />} label="OSM · светофоры" detail={osmSignals.length ? osmSignals.length + ' отмечено в OSM' : 'Только размеченные объекты'} checked={showOsmSignals} onChange={setShowOsmSignals} />
+          <LayerToggle icon={<Gauge size={15} />} label="OSM · камеры скорости" detail="Только камеры, отмеченные в OpenStreetMap" checked={showSpeedCameras} onChange={setShowSpeedCameras} />
           <LayerToggle icon={<Activity size={15} />} label="Тестовый маршрут" detail="Схематический · не дорожная сеть" checked={showDemo} onChange={setShowDemo} />
           <LayerToggle icon={<CarFront size={15} />} label="Виртуальные авто" detail={microNetworkRef.current ? 'микросимуляция · ' + (microStateRef.current?.vehicles.length || 0) + ' агентов' : traffic.vehicles.length + ' демонстрационных агентов'} checked={showCars} onChange={setShowCars} />
           <LayerToggle icon={<TrafficCone size={15} />} label="Мои светофоры" detail={signals.length + ' объектов сценария'} checked={showUserSignals} onChange={setShowUserSignals} />
