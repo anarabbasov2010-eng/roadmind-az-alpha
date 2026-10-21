@@ -703,7 +703,7 @@ export default function App() {
     if (!container || mapRef.current) return;
     const map = new maplibregl.Map({
       container,
-      style: 'https://tiles.openfreemap.org/styles/bright',
+      style: 'https://tiles.openfreemap.org/styles/liberty',
       center: BAKU,
       zoom: 14.25,
       pitch: 44,
@@ -1100,7 +1100,7 @@ export default function App() {
         <div className="topbar-center"><span className="sim-live"><i />{isRunning ? 'Движение в модели' : 'Модель на паузе'}</span></div>
         <div className="topbar-actions">
           <button className="icon-button" title="О проекте" onClick={() => flashToast('RoadMind AZ Alpha 0.2 · цифровая лаборатория дорожных сценариев Баку.')}><CircleHelp size={17} /></button>
-          <button className="icon-button" title="Данные карты" onClick={() => flashToast('Базовая карта: OpenFreeMap / OpenStreetMap. Светофоры в OSM не содержат текущую фазу сигнала.')}><Settings2 size={17} /></button>
+          <button className="icon-button" title="Данные карты" onClick={() => flashToast('Карта: OpenFreeMap Liberty · векторная карта на данных OpenStreetMap. Данные дорог обновляются в OSM, а спутниковые снимки требуют отдельного источника.')}><Settings2 size={17} /></button>
           <button className="save-button" onClick={saveScenario}><Save size={15} />Сохранить</button>
         </div>
       </header>
