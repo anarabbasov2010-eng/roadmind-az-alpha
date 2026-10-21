@@ -889,8 +889,11 @@ export default function App() {
     vis('rm-osm-signal-points', showOsmSignals);
     vis('rm-demo-casing', showDemo);
     vis('rm-demo-line', showDemo);
-    vis('rm-simulation-route-casing', true);
-    vis('rm-simulation-route-line', true);
+    // Simulation vehicles are rendered from the lane-level microsimulation.
+    // Never draw the old closed-loop route overlay: it looks like a circular road
+    // and is not a real street segment from the loaded map.
+    vis('rm-simulation-route-casing', false);
+    vis('rm-simulation-route-line', false);
     vis('rm-vehicles-layer', showCars);
     vis('rm-user-signal-halo', showUserSignals);
     vis('rm-user-signal-points', showUserSignals);
@@ -918,6 +921,9 @@ export default function App() {
           (mapRef.current?.getSource('rm-osm-signals') as GeoJSONSource | undefined)?.setData(importedSignalCollection(osmSignals, microNetwork, nextMicro.timeSeconds) as never);
         }
       }
+      // Keep the legacy KPI clock alive for the dashboard, but don't present its
+      // synthetic loop as live road traffic. Vehicle geometry comes only from the
+      // lane-level network simulation above.
       const next = advanceTraffic(trafficRef.current, signalsRef.current, speedLimit, 0.1 * speedMultiplier, simulationRouteLengthKmRef.current);
       trafficRef.current = next;
       setTraffic(next);
