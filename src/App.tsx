@@ -289,11 +289,11 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     type: 'FeatureCollection',
     features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: DEMO_ROUTE }, properties: { label: 'Схематический тестовый маршрут' } }]
   } as never });
-  map.addLayer({ id: 'rm-demo-casing', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#aab3a8', 'line-width': 5, 'line-opacity': 0.36 } });
-  map.addLayer({ id: 'rm-demo-line', type: 'line', source: 'rm-demo-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#83988b', 'line-width': 1.15, 'line-opacity': 0.64, 'line-dasharray': [1.8, 2.5] } });
+  map.addLayer({ id: 'rm-demo-casing', type: 'line', source: 'rm-demo-route', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#aab3a8', 'line-width': 5, 'line-opacity': 0.36 } });
+  map.addLayer({ id: 'rm-demo-line', type: 'line', source: 'rm-demo-route', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#83988b', 'line-width': 1.15, 'line-opacity': 0.64, 'line-dasharray': [1.8, 2.5] } });
   map.addSource('rm-simulation-route', { type: 'geojson', data: emptyCollection() as never });
-  map.addLayer({ id: 'rm-simulation-route-casing', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 6, 19, 8], 'line-opacity': 0.32 } });
-  map.addLayer({ id: 'rm-simulation-route-line', type: 'line', source: 'rm-simulation-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.3, 16, 2.1, 19, 2.8], 'line-opacity': 0.92, 'line-dasharray': [2, 1.6] } });
+  map.addLayer({ id: 'rm-simulation-route-casing', type: 'line', source: 'rm-simulation-route', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 6, 19, 8], 'line-opacity': 0.32 } });
+  map.addLayer({ id: 'rm-simulation-route-line', type: 'line', source: 'rm-simulation-route', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#4c8160', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.3, 16, 2.1, 19, 2.8], 'line-opacity': 0.92, 'line-dasharray': [2, 1.6] } });
 
   map.addSource('rm-osm-roads', { type: 'geojson', data: emptyCollection() as never });
   const roadWidth = ['*',
