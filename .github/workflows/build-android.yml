@@ -1,0 +1,77 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install web dependencies
+        run: npm install
+
+      - name: Build RoadMind web app
+        run: npm run build
+
+      - name: Install Capacitor
+        run: npm install --no-save @capacitor/core@^7 @capacitor/android@^7 @capacitor/cli@^7
+
+      - name: Create Capacitor configuration
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "az.roadmind.app",
+            "appName": "RoadMind AZ",
+            "webDir": "dist",
+            "bundledWebRuntime": false,
+            "server": {
+              "androidScheme": "https"
+            }
+          }
+          EOF
+
+      - name: Prepare stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: roadmind-android-debug-keystore-v1
+          restore-keys: roadmind-android-debug-keystore-
+
+      - name: Ensure signing key exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=RoadMind AZ, OU=Alpha, O=RoadMind, L=Baku, ST=Baku, C=AZ"
+          fi
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Sync web assets
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoadMind-AZ-Android-Alpha
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
