@@ -703,7 +703,7 @@ export default function App() {
     if (!container || mapRef.current) return;
     const map = new maplibregl.Map({
       container,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
+      style: 'https://styles.maptoolkit.org/street.json',
       center: BAKU,
       zoom: 14.25,
       pitch: 44,
@@ -723,6 +723,26 @@ export default function App() {
     map.scrollZoom.setWheelZoomRate(1 / 850);
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    const maptoolkitLogoControl: maplibregl.IControl = {
+      onAdd() {
+        const wrapper = document.createElement('a');
+        wrapper.href = 'https://www.maptoolkit.org/';
+        wrapper.target = '_blank';
+        wrapper.rel = 'noreferrer';
+        wrapper.setAttribute('aria-label', 'Maptoolkit map tiles');
+        wrapper.title = 'Maptoolkit';
+        wrapper.style.cssText = 'display:block;width:92px;height:24px;margin:0 0 6px 6px;overflow:hidden;';
+        const logo = document.createElement('img');
+        logo.src = 'https://www.maptoolkit.org/assets/maptoolkit-attribution.png';
+        logo.alt = 'Maptoolkit';
+        logo.style.cssText = 'display:block;width:92px;height:24px;object-fit:contain;';
+        wrapper.appendChild(logo);
+        return wrapper;
+      },
+      onRemove() {},
+      getDefaultPosition: () => 'bottom-left'
+    };
+    map.addControl(maptoolkitLogoControl, 'bottom-left');
 
     const failTimer = window.setTimeout(() => {
       if (!map.isStyleLoaded()) setMapStatus('error');
@@ -1100,7 +1120,7 @@ export default function App() {
         <div className="topbar-center"><span className="sim-live"><i />{isRunning ? 'Движение в модели' : 'Модель на паузе'}</span></div>
         <div className="topbar-actions">
           <button className="icon-button" title="О проекте" onClick={() => flashToast('RoadMind AZ Alpha 0.2 · цифровая лаборатория дорожных сценариев Баку.')}><CircleHelp size={17} /></button>
-          <button className="icon-button" title="Данные карты" onClick={() => flashToast('Карта: OpenFreeMap Liberty · векторная карта на данных OpenStreetMap. Данные дорог обновляются в OSM, а спутниковые снимки требуют отдельного источника.')}><Settings2 size={17} /></button>
+          <button className="icon-button" title="Данные карты" onClick={() => flashToast('Карта: Maptoolkit Street · бесплатная векторная подложка с еженедельным обновлением данных OpenStreetMap. © Maptoolkit © OpenStreetMap.')}><Settings2 size={17} /></button>
           <button className="save-button" onClick={saveScenario}><Save size={15} />Сохранить</button>
         </div>
       </header>
