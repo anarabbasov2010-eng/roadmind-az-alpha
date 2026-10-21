@@ -303,3 +303,86 @@ button:disabled { opacity: .55; cursor: wait !important; }
   transition: background .16s ease, border-color .16s ease;
 }
 .engineering-tools button:hover { background: #f0f5ee; border-color: #b9cbbb; }
+
+
+/* Android / narrow-screen workspace: map first, all engineering panels remain reachable below it. */
+@media (max-width: 760px) {
+  html, body, #root { width: 100%; height: 100%; min-width: 0; overflow: hidden; }
+  body { overscroll-behavior: none; }
+  .app-shell { width: 100%; min-width: 0; height: 100dvh; min-height: 0; }
+  .topbar { flex: 0 0 54px; height: 54px; gap: 9px; padding: 0 10px; }
+  .brand-lockup { flex: 0 1 auto; min-width: 0; gap: 7px; }
+  .brand-icon { width: 30px; height: 30px; flex: 0 0 30px; }
+  .brand-wordmark strong { font-size: 14px; }
+  .brand-wordmark small { font-size: 7px; }
+  .topbar-divider, .workspace-name, .topbar-center { display: none; }
+  .topbar-actions { margin-left: auto; gap: 4px; }
+  .icon-button { width: 34px; height: 34px; }
+  .save-button { min-height: 34px; padding: 0 9px; font-size: 10px; }
+  .workspace {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .map-workspace {
+    order: -1;
+    position: relative;
+    flex: 0 0 56dvh;
+    width: 100%;
+    min-height: 340px;
+    overflow: hidden;
+    touch-action: pan-x pan-y;
+  }
+  .map-container { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .map-heading { top: 10px; left: 10px; max-width: calc(100% - 90px); }
+  .map-floating-tools { top: 10px; right: 10px; }
+  .map-top-right { top: 54px; right: 10px; max-width: calc(100% - 20px); }
+  .camera-dock { right: 8px; bottom: 54px; width: min(176px, 52vw); padding: 9px; }
+  .map-legend { left: 8px; bottom: 48px; max-width: calc(100% - 195px); }
+  .map-bottom-left { left: 8px; bottom: 8px; }
+  .map-bottom-controls { right: 8px; bottom: 8px; }
+  .left-sidebar, .right-sidebar {
+    display: flex;
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: none;
+    min-height: auto;
+    overflow: visible;
+    padding: 15px 12px;
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+  .left-sidebar { order: 0; }
+  .right-sidebar { order: 1; gap: 2px; }
+  .sidebar-section-title { font-size: 11px; }
+  .tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tool-tile { min-height: 58px; height: auto; }
+  .tool-tile span { font-size: 11px; }
+  .mode-hint, .sidebar-note, .source-stamp small { font-size: 10px; }
+  .layer-copy strong, .source-stamp strong { font-size: 10px; }
+  .layer-copy small { font-size: 9px; }
+  .sync-button { min-height: 40px; font-size: 11px; }
+  .engineering-tools { padding: 10px; }
+  .engineering-tools button { min-height: 38px; font-size: 11px; }
+  .inspector-header { padding-top: 2px; }
+  .control-row { gap: 10px; }
+  .range-input { min-height: 28px; }
+  .signal-actions, .inspector-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .signal-actions button, .inspector-actions button, .compare-button, .export-button { min-height: 40px; }
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .statusbar { flex: 0 0 auto; min-height: 28px; padding: 5px 10px; overflow-x: auto; white-space: nowrap; }
+  .statusbar > * { flex: 0 0 auto; }
+}
+
+@media (max-width: 390px) {
+  .brand-wordmark small { display: none; }
+  .save-button { padding: 0 7px; }
+  .map-workspace { flex-basis: 54dvh; min-height: 320px; }
+  .camera-dock { width: 155px; }
+  .map-legend { max-width: calc(100% - 170px); }
+}
