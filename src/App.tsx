@@ -410,7 +410,7 @@ async function addMapLayersWithAssets(map: MapLibreMap, signals: ScenarioSignal[
     }
   });
 
-  map.addSource('rm-vehicles', { type: 'geojson', data: carsCollection(createTrafficState()) as never });
+  map.addSource('rm-vehicles', { type: 'geojson', data: emptyCollection() as never });
   map.addLayer({
     id: 'rm-vehicles-layer', type: 'symbol', source: 'rm-vehicles',
     layout: { 'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.35, 15, 0.65, 19, 0.95], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
@@ -748,7 +748,7 @@ export default function App() {
         await addMapLayers(map, signalsRef.current);
         (map.getSource('rm-user-signals') as GeoJSONSource).setData(signalCollection(signalsRef.current, trafficRef.current.time, microNetworkRef.current, microStateRef.current?.timeSeconds || 0, scenarioSignalNodeMapRef.current) as never);
         (map.getSource('rm-user-roads') as GeoJSONSource).setData(roadCollection(roadsRef.current) as never);
-        (map.getSource('rm-vehicles') as GeoJSONSource).setData(carsCollection(trafficRef.current) as never);
+        (map.getSource('rm-vehicles') as GeoJSONSource).setData(emptyCollection() as never);
         setMapStatus('ready');
         window.setTimeout(() => syncOsmRef.current?.(true), 900);
       } catch (error) {
@@ -872,7 +872,7 @@ export default function App() {
     if (!map?.isStyleLoaded()) return;
     const microNetwork = microNetworkRef.current;
     const microState = microStateRef.current;
-    (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microNetwork && microState && microState.vehicles.length ? microVehicleCollection(microNetwork, microState) as never : carsCollection(traffic, simulationRouteRef.current) as never);
+    (map.getSource('rm-vehicles') as GeoJSONSource | undefined)?.setData(microNetwork && microState && microState.vehicles.length ? microVehicleCollection(microNetwork, microState) as never : emptyCollection() as never);
   }, [traffic]);
   useEffect(() => {
     const map = mapRef.current;
