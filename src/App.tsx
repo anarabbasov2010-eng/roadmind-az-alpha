@@ -84,21 +84,6 @@ function roadCollection(roads: RoadDraft[]): FeatureCollection {
   };
 }
 
-function carsCollection(state: TrafficState, route: Position[] = DEMO_ROUTE): FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: state.vehicles.map((vehicle) => {
-      const point = pointAtProgress(route, vehicle.progress);
-      const next = pointAtProgress(route, (vehicle.progress + 0.001) % 1);
-      const bearing = Math.atan2(next[0] - point[0], next[1] - point[1]) * 180 / Math.PI;
-      return {
-        type: 'Feature', id: vehicle.id, geometry: { type: 'Point', coordinates: point },
-        properties: { id: vehicle.id, bearing, stopped: vehicle.stopped, icon: vehicle.id % 5 === 0 ? 'rm-car-amber' : 'rm-car' }
-      };
-    })
-  };
-}
-
 function importedRoadCollection(roads: OSMRoad[]): FeatureCollection {
   return {
     type: 'FeatureCollection',
