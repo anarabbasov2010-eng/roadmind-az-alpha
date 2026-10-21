@@ -339,13 +339,23 @@ button:disabled { opacity: .55; cursor: wait !important; }
     touch-action: pan-x pan-y;
   }
   .map-container { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .map-heading { top: 10px; left: 10px; max-width: calc(100% - 90px); }
-  .map-floating-tools { top: 10px; right: 10px; }
-  .map-top-right { top: 54px; right: 10px; max-width: calc(100% - 20px); }
-  .camera-dock { right: 8px; bottom: 54px; width: min(176px, 52vw); padding: 9px; }
-  .map-legend { left: 8px; bottom: 48px; max-width: calc(100% - 195px); }
-  .map-bottom-left { left: 8px; bottom: 8px; }
+  .map-heading { top: 10px; left: 10px; max-width: calc(100% - 150px); }
+  .map-heading h1 { font-size: clamp(17px, 4.6vw, 21px); }
+  .map-heading p { max-width: 230px; font-size: 9px; line-height: 1.35; }
+  .map-floating-tools { top: 8px; right: 8px; left: auto; transform: none; gap: 1px; padding: 3px; }
+  .map-floating-tools button { width: 30px; height: 30px; }
+  .map-top-right { top: 51px; right: 8px; max-width: calc(100% - 16px); }
+  .camera-dock { right: 8px; bottom: 54px; width: min(168px, 48vw); padding: 8px; }
+  .map-legend { left: 8px; bottom: 47px; max-width: calc(100% - 178px); gap: 7px; padding: 7px; }
+  .map-legend span { gap: 4px; }
+  .map-bottom-left { left: 8px; bottom: 8px; max-width: 42%; overflow: hidden; text-overflow: ellipsis; }
   .map-bottom-controls { right: 8px; bottom: 8px; }
+  .map-workspace .maplibregl-ctrl-bottom-right { right: 7px; bottom: 50px; }
+  .map-workspace .maplibregl-ctrl-group { display: flex; flex-direction: column; }
+  .map-workspace .maplibregl-ctrl button { width: 30px; height: 30px; }
+  .map-workspace .maplibregl-ctrl-attrib { max-width: 130px; }
+  .statusbar { gap: 10px; font-size: 9px; }
+  .left-sidebar, .right-sidebar { scroll-margin-top: 10px; }
   .left-sidebar, .right-sidebar {
     display: flex;
     flex: 0 0 auto;
@@ -382,7 +392,13 @@ button:disabled { opacity: .55; cursor: wait !important; }
 @media (max-width: 390px) {
   .brand-wordmark small { display: none; }
   .save-button { padding: 0 7px; }
-  .map-workspace { flex-basis: 54dvh; min-height: 320px; }
-  .camera-dock { width: 155px; }
-  .map-legend { max-width: calc(100% - 170px); }
+  .map-workspace { flex-basis: 52dvh; min-height: 290px; }
+  .map-heading { max-width: calc(100% - 138px); }
+  .map-heading p { max-width: 180px; }
+  .camera-dock { width: 145px; }
+  .map-legend { max-width: calc(100% - 154px); gap: 5px; font-size: 7px; }
+  .map-legend span:nth-child(3) { display: none; }
+  .map-top-right { top: 49px; }
+  .map-top-right button { min-width: 27px; padding: 0 5px; }
+  .map-bottom-controls { max-width: calc(100% - 16px); }
 }
